@@ -1,0 +1,21 @@
+# ====== 核心依赖 ======
+pandas>=2.0
+jieba>=0.42
+openai>=1.0          # LLM API 调用（兼容 DeepSeek / Qwen）
+python-dotenv>=1.0   # 环境变量管理
+
+# ====== Lab 2：情感分析（可选，按需使用） ======
+transformers>=4.30
+torch>=2.0
+
+# ====== Lab 3：RAG（可选） ======
+chromadb>=0.4
+langchain>=0.2
+
+# ====== 看板 ======
+streamlit>=1.30
+pyecharts>=2.0
+
+# ====== 工具 ======
+pyyaml>=6.0
+requests>=2.28

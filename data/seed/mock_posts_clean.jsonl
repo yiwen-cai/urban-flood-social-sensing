@@ -1,0 +1,108 @@
+{
+  "post_id": "mock_001",
+  "text_raw": "@郑州发布 金水区经三路农科路交叉口积水严重，多辆车被淹，急需救援！#郑州暴雨#",
+  "text_clean": "金水区经三路农科路交叉口积水严重，多辆车被淹，急需救援",
+  "timestamp": "2021-07-20T16:30:00",
+  "location": {"city": "郑州", "district": "金水区", "address": "经三路农科路交叉口", "lat": 34.786, "lng": 113.685},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_002",
+  "text_raw": "郑州东站滞留大量旅客，列车全部停运，现场一片混乱，不知道什么时候能走。@郑州铁路局",
+  "text_clean": "郑州东站滞留大量旅客，列车全部停运，现场一片混乱，不知道什么时候能走",
+  "timestamp": "2021-07-20T17:00:00",
+  "location": {"city": "郑州", "district": "郑东新区", "address": "郑州东站", "lat": 34.760, "lng": 113.773},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_003",
+  "text_raw": "家里断电断水已经24小时了，手机也快没电了，希望相关部门能看到。坐标二七区",
+  "text_clean": "家里断电断水已经24小时了，手机也快没电了，希望相关部门能看到",
+  "timestamp": "2021-07-21T08:00:00",
+  "location": {"city": "郑州", "district": "二七区", "address": null, "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_004",
+  "text_raw": "京广路隧道积水严重，有车辆被淹，太可怕了，大家千万不要走那边！！！",
+  "text_clean": "京广路隧道积水严重，有车辆被淹，大家千万不要走那边",
+  "timestamp": "2021-07-20T18:15:00",
+  "location": {"city": "郑州", "district": null, "address": "京广路隧道", "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_005",
+  "text_raw": "转发：郑州红十字会已开通救灾捐赠通道，请大家伸出援手。#河南暴雨救援#",
+  "text_clean": "转发：郑州红十字会已开通救灾捐赠通道，请大家伸出援手",
+  "timestamp": "2021-07-21T10:00:00",
+  "location": {"city": "郑州", "district": null, "address": null, "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_006",
+  "text_raw": "龙子湖这边水位还在涨，附近居民注意安全。已经看到救援队了，辛苦了！",
+  "text_clean": "龙子湖这边水位还在涨，附近居民注意安全。已经看到救援队了，辛苦了",
+  "timestamp": "2021-07-20T19:30:00",
+  "location": {"city": "郑州", "district": null, "address": "龙子湖", "lat": 34.797, "lng": 113.805},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_007",
+  "text_raw": "听说地铁进水了？？有没有人知道具体情况？求真相",
+  "text_clean": "地铁进水了，有没有人知道具体情况",
+  "timestamp": "2021-07-20T17:45:00",
+  "location": {"city": "郑州", "district": null, "address": "地铁", "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_008",
+  "text_raw": "花园路东风路这边积水退了，环卫工人已经在清理路面了，感谢所有奋战在一线的人！",
+  "text_clean": "花园路东风路这边积水退了，环卫工人已经在清理路面了，感谢所有奋战在一线的人",
+  "timestamp": "2021-07-22T09:00:00",
+  "location": {"city": "郑州", "district": null, "address": "花园路东风路", "lat": 34.786, "lng": 113.685},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_009",
+  "text_raw": "求助！我奶奶在惠济区老鸦陈，70多岁独居，联系不上了，有没有附近的能帮忙看看？",
+  "text_clean": "求助！我奶奶在惠济区老鸦陈，70多岁独居，联系不上了，有没有附近的能帮忙看看",
+  "timestamp": "2021-07-20T20:00:00",
+  "location": {"city": "郑州", "district": "惠济区", "address": "老鸦陈", "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_010",
+  "text_raw": "气象台说今晚还有大到暴雨，大家注意防范。这次降雨量已经破了历史记录。",
+  "text_clean": "气象台说今晚还有大到暴雨，大家注意防范。这次降雨量已经破了历史记录",
+  "timestamp": "2021-07-21T14:00:00",
+  "location": {"city": "郑州", "district": null, "address": null, "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_011",
+  "text_raw": "郑州发布：【辟谣】网传常庄水库决堤消息为不实信息，请广大市民不要恐慌，不传谣不信谣。",
+  "text_clean": "网传常庄水库决堤消息为不实信息，请广大市民不要恐慌，不传谣不信谣",
+  "timestamp": "2021-07-21T11:00:00",
+  "location": {"city": "郑州", "district": null, "address": "常庄水库", "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
+{
+  "post_id": "mock_012",
+  "text_raw": "文化路这边有志愿者在免费发水和面包，需要物资的可以过来。大灾面前有大爱❤️",
+  "text_clean": "文化路这边有志愿者在免费发水和面包，需要物资的可以过来",
+  "timestamp": "2021-07-22T12:00:00",
+  "location": {"city": "郑州", "district": null, "address": "文化路", "lat": null, "lng": null},
+  "source": "mock",
+  "url": ""
+}
