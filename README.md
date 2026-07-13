@@ -63,6 +63,12 @@ python -m src.lab1_collection.fetch_data
 python -m src.lab1_collection.fetch_data --verify-only
 ```
 
+若 huggingface.co 不可达，可通过镜像下载：
+
+```bash
+python -m src.lab1_collection.fetch_data --mirror hf-mirror.com
+```
+
 所有成员都可以只使用合成样例验证接口契约：
 
 ```bash
