@@ -2,7 +2,7 @@
 
 面向社会计算课程实践的 Kerala 2018 洪水社交媒体人道信息分析项目。项目以 HumAID 单事件冻结语料为输入，完成数据治理、传统 baseline 与 LLM 的 9 类人道信息分类对比、探索性情绪分析、结构化聚合，以及可追溯的中文课程简报和离线看板。
 
-> 当前状态：总体方案与三人接口契约已完成，工程实现尚未开始。
+> 当前状态：总体方案与三人接口契约已完成；数据清单、下载校验器、JSON Schema 和 20 条合成契约样例已经落地，其余流水线模块尚待实现。
 
 ## 项目边界
 
@@ -44,16 +44,35 @@
 
 - [课程实践任务书](docs/course/课程实践任务书.md)
 - [项目实施方案](docs/project/实施方案.md)
+- [数据准入与合规边界](docs/project/DATA_GATE.md)
 - [候选方向综述](docs/research/候选方向综述.md)
 - [协作规范](CONTRIBUTING.md)
 
-## 计划中的统一验证入口
+## 当前可执行步骤
 
-工程实现完成后，每次正式交接应通过：
+安装当前最小依赖：
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+成员 A、B 可各自下载并校验冻结数据；原始文本不会进入 Git：
+
+```bash
+python -m src.lab1_collection.fetch_data
+python -m src.lab1_collection.fetch_data --verify-only
+```
+
+所有成员都可以只使用合成样例验证接口契约：
 
 ```bash
 python -m pytest tests/test_schema.py
+```
+
+完整流水线实现后，正式交接还应通过：
+
+```bash
 bash run_pipeline.sh --fixture --offline
 ```
 
-上述脚本目前属于实施契约，尚未实现。
+`run_pipeline.sh` 目前仍是实施契约，尚未实现。DeepSeek API 冒烟测试只允许使用 20 条合成样例；真实 HumAID 文本在团队确认数据条款和第三方处理边界前不得上传。
