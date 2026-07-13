@@ -1,0 +1,50 @@
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Raw or potentially sensitive datasets
+data/raw/*
+!data/raw/.gitkeep
+data/frozen/*
+!data/frozen/.gitkeep
+!data/frozen/manifest.json
+data/processed/*
+!data/processed/.gitkeep
+data/analyzed/*
+!data/analyzed/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+data/seed/*
+!data/seed/.gitkeep
+
+# Generated outputs and run logs
+data/output/*
+!data/output/.gitkeep
+artifacts/runs/*
+!artifacts/runs/.gitkeep
+artifacts/demo/*.mp4
+release/
+*.log
+
+# Local notebooks
+.ipynb_checkpoints/
