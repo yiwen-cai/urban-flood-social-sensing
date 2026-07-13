@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yiwen-cai/urban-flood-social-sensing/schemas/post.schema.json",
+  "title": "Kerala HumAID pipeline post",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pipeline_run_id",
+    "post_id",
+    "text_clean",
+    "event_id",
+    "time",
+    "location",
+    "source",
+    "source_ref",
+    "pii_redacted",
+    "_lab2",
+    "_lab3"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "pipeline_run_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "post_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "text_clean": {"type": "string", "minLength": 1, "maxLength": 5000},
+    "event_id": {"const": "kerala_floods_2018"},
+    "time": {"type": "null"},
+    "location": {"type": "null"},
+    "source": {"enum": ["humaid_events", "synthetic_fixture"]},
+    "source_ref": {"type": "string", "minLength": 1, "maxLength": 256},
+    "pii_redacted": {"const": true},
+    "_lab2": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/lab2"}
+      ]
+    },
+    "_lab3": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/lab3"}
+      ]
+    }
+  },
+  "$defs": {
+    "humanitarian_label": {
+      "enum": [
+        "caution_and_advice",
+        "displaced_people_and_evacuations",
+        "infrastructure_and_utility_damage",
+        "injured_or_dead_people",
+        "not_humanitarian",
+        "other_relevant_information",
+        "requests_or_urgent_needs",
+        "rescue_volunteering_or_donation_effort",
+        "sympathy_and_support"
+      ]
+    },
+    "nullable_humanitarian_label": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/humanitarian_label"}
+      ]
+    },
+    "exploratory_emotion": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "enum": [
+            "fear_or_anxiety",
+            "anger",
+            "sadness",
+            "positive_support",
+            "neutral_or_unclear"
+          ]
+        }
+      ]
+    },
+    "lab2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_label",
+        "predicted_label",
+        "model_scores",
+        "exploratory_emotion",
+        "evidence_status",
+        "model_version"
+      ],
+      "properties": {
+        "reference_label": {"$ref": "#/$defs/nullable_humanitarian_label"},
+        "predicted_label": {"$ref": "#/$defs/nullable_humanitarian_label"},
+        "model_scores": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/humanitarian_label"},
+          "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "exploratory_emotion": {"$ref": "#/$defs/exploratory_emotion"},
+        "evidence_status": {
+          "enum": ["dataset_record", "human_labeled", "model_prediction"]
+        },
+        "model_version": {"type": ["string", "null"], "maxLength": 128}
+      }
+    },
+    "lab3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["briefing_relevance", "briefing_summary", "used_in_section"],
+      "properties": {
+        "briefing_relevance": {"enum": ["high", "medium", "low", "excluded"]},
+        "briefing_summary": {"type": ["string", "null"], "maxLength": 1000},
+        "used_in_section": {"type": ["string", "null"], "maxLength": 128}
+      }
+    }
+  }
+}

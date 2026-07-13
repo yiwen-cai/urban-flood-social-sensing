@@ -1,0 +1,61 @@
+{
+  "manifest_version": "1.0.0",
+  "dataset_id": "QCRI/HumAID-events",
+  "dataset_revision": "2e7ea23332006f075068b90d401b178d847b447a",
+  "event_id": "kerala_floods_2018",
+  "frozen_at": "2026-07-13",
+  "main_corpus_split": "test",
+  "main_corpus_records": 1582,
+  "source": {
+    "dataset_url": "https://huggingface.co/datasets/QCRI/HumAID-events",
+    "official_description_url": "https://crisisnlp.qcri.org/humaid_dataset.html",
+    "terms_url": "https://crisisnlp.qcri.org/terms-of-use.html",
+    "license_metadata": "cc-by-nc-sa-4.0",
+    "handling_policy": "Apply the stricter QCRI terms: keep tweet text confidential, publish only synthetic or paraphrased fixtures, retain attribution, and delete text when the course research is complete or upon request."
+  },
+  "raw_record_fields": [
+    "tweet_id",
+    "tweet_text",
+    "class_label"
+  ],
+  "allowed_labels": [
+    "caution_and_advice",
+    "displaced_people_and_evacuations",
+    "infrastructure_and_utility_damage",
+    "injured_or_dead_people",
+    "not_humanitarian",
+    "other_relevant_information",
+    "requests_or_urgent_needs",
+    "rescue_volunteering_or_donation_effort",
+    "sympathy_and_support"
+  ],
+  "files": [
+    {
+      "split": "train",
+      "role": "baseline training and few-shot candidate pool only",
+      "path": "data/raw/humaid/kerala_floods_2018/train.json",
+      "url": "https://huggingface.co/datasets/QCRI/HumAID-events/resolve/2e7ea23332006f075068b90d401b178d847b447a/kerala_floods_2018/train.json?download=true",
+      "sha256": "4571d45d717a2b5d532e0fe0666f74be1950c77b375a6f9bb67086e12c489e11",
+      "bytes": 1826708,
+      "records": 5588
+    },
+    {
+      "split": "dev",
+      "role": "baseline tuning and prompt development only",
+      "path": "data/raw/humaid/kerala_floods_2018/dev.json",
+      "url": "https://huggingface.co/datasets/QCRI/HumAID-events/resolve/2e7ea23332006f075068b90d401b178d847b447a/kerala_floods_2018/dev.json?download=true",
+      "sha256": "139f51547c35f5ada5fc63f7ddf476b2f26f22b87f38afbd935715812e473b36",
+      "bytes": 264079,
+      "records": 814
+    },
+    {
+      "split": "test",
+      "role": "frozen main corpus and formal evaluation set",
+      "path": "data/raw/humaid/kerala_floods_2018/test.json",
+      "url": "https://huggingface.co/datasets/QCRI/HumAID-events/resolve/2e7ea23332006f075068b90d401b178d847b447a/kerala_floods_2018/test.json?download=true",
+      "sha256": "960a90f8d10daa0fb3611a18c21750a2ae72203d4d64cafb88f9a918f99ab789",
+      "bytes": 519315,
+      "records": 1582
+    }
+  ]
+}
