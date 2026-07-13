@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yiwen-cai/urban-flood-social-sensing/schemas/post.schema.json",
+  "title": "城市暴雨内涝社交媒体帖子记录",
+  "description": "Lab 1→2→3 模块间传递的帖子数据契约。schema_version 1.0.0。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "pipeline_run_id",
+    "post_id",
+    "text_clean",
+    "event_id",
+    "source",
+    "source_ref",
+    "pii_redacted"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "冻结的 schema 版本，本项目固定为 1.0.0"
+    },
+    "pipeline_run_id": {
+      "type": "string",
+      "description": "本次流水线运行的唯一标识"
+    },
+    "post_id": {
+      "type": "string",
+      "description": "全语料唯一的帖子标识"
+    },
+    "text_clean": {
+      "type": "string",
+      "description": "已完成脱敏的帖子文本",
+      "minLength": 1
+    },
+    "event_id": {
+      "type": "string",
+      "description": "冻结语料对应的事件标识"
+    },
+    "time": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "帖子发布时间，仅保留数据中真实存在的时间"
+    },
+    "location": {
+      "type": ["object", "null"],
+      "description": "地理位置，最多展示区县级",
+      "properties": {
+        "city": { "type": ["string", "null"] },
+        "district": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "string",
+      "description": "冻结的数据源标识"
+    },
+    "source_ref": {
+      "type": "string",
+      "description": "本地追溯标识，用于在受控原始数据中定位"
+    },
+    "pii_redacted": {
+      "type": "boolean",
+      "description": "脱敏检查是否通过，只有 true 才能交接"
+    },
+    "_lab2": {
+      "type": ["object", "null"],
+      "description": "Lab 2 追加的分析结果",
+      "properties": {
+        "primary_emotion": {
+          "type": "string",
+          "enum": ["恐慌/焦虑", "愤怒", "悲伤", "积极支持", "中性/无法判断"]
+        },
+        "information_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "求助/紧急需求",
+              "援助/资源提供",
+              "灾情/设施影响",
+              "警告/建议",
+              "质疑/错误信息讨论",
+              "其他"
+            ]
+          }
+        },
+        "model_scores": {
+          "type": "object",
+          "description": "各类别模型置信度，键为标签名，值为 0-1 浮点数"
+        },
+        "entities": {
+          "type": "object",
+          "properties": {
+            "infra": { "type": "array", "items": { "type": "string" } },
+            "demand": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "evidence_status": {
+          "type": "string",
+          "enum": ["dataset_record", "human_labeled", "model_prediction", "external_reference"]
+        },
+        "model_version": {
+          "type": "string",
+          "description": "产生此标注的模型版本标识"
+        }
+      }
+    },
+    "_lab3": {
+      "type": ["object", "null"],
+      "description": "Lab 3 追加的展示元数据",
+      "properties": {
+        "briefing_relevance": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "briefing_summary": {
+          "type": "string"
+        },
+        "used_in_section": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

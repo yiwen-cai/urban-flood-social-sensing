@@ -1,0 +1,36 @@
+{
+  "description": "冻结数据清单 —— 记录主语料来源、文件校验和和许可信息",
+  "main_corpus": {
+    "source": "weibo_720",
+    "title": "Weibo posts about July 2021 Zhengzhou flood",
+    "paper_ref": "https://www.sciencedirect.com/science/article/pii/S1364815224000823",
+    "license": "课程教学用途，详见论文数据可用性声明",
+    "language": "zh",
+    "event_id": "zhengzhou_2021_flood",
+    "event_name": "2021年郑州7·20特大暴雨",
+    "time_range": "2021-07-20 至 2021-07-23",
+    "max_records": 2000,
+    "fields_available": ["正文", "时间", "地点（不保证精确坐标）"],
+    "fields_missing_maybe": ["时间可能为空", "地点最多到区县级别"],
+    "pii_audit_completed": false,
+    "pii_audit_date": null,
+    "pii_audit_notes": "课程开始前必须完成隐私抽样审计"
+  },
+  "fallback_corpus": {
+    "source": "humaid",
+    "title": "HumAID — Humanitarianism in the Age of Information Disorder",
+    "url": "https://huggingface.co/datasets/QCRI/HumAID-all",
+    "language": "en",
+    "max_records": 2000,
+    "event_selection": "单一事件，具体事件和样本数待课前确定",
+    "note": "仅在 weibo_720 无法取得时启用"
+  },
+  "spatial_reference": {
+    "source": "crowdflood",
+    "title": "CrowdFlood — Crowdsourced Flooding Information",
+    "url": "https://zenodo.org/records/19921295",
+    "note": "独立空间参照层，不包含原始帖子正文，不与主文本语料逐条关联"
+  },
+  "files": [],
+  "last_updated": null
+}

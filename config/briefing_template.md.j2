@@ -1,0 +1,113 @@
+# 课程分析简报模板
+# 用途：Lab 3 用此 Jinja2 模板生成最终简报
+# 维护：成员 C
+# 对应实施方案 4.3 节简报结构
+
+# 课程分析简报 — {{ event_name }} 社交媒体案例
+
+> **生成时间**：{{ generated_at }}
+> **数据范围**：{{ time_range_start }} 至 {{ time_range_end }}
+> **pipeline_run_id**：{{ pipeline_run_id }}
+> **数据来源**：{{ data_source }}（共 {{ total_posts }} 条可用记录）
+> **本简报用于课程技术演示**，仅归纳冻结数据中的可见讨论，不代表真实灾情、总体公众需求或权威结论。
+
+---
+
+## 一、概述
+
+- 本次分析基于 {{ total_posts }} 条已脱敏社交媒体帖子
+- 信息功能分布：{{ info_type_summary }}
+- 主情绪分布：{{ emotion_summary }}
+- 时间跨度：{{ time_span }}
+
+---
+
+## 二、数据范围与质量
+
+| 指标 | 数值 |
+|------|------|
+| 原始记录数 | {{ raw_count }} |
+| 清洗后可用记录数 | {{ clean_count }} |
+| 重复率 | {{ duplicate_rate }} |
+| 时间字段缺失率 | {{ time_missing_rate }} |
+| 地点字段（区县级）缺失率 | {{ location_missing_rate }} |
+| 脱敏命中记录数 | {{ pii_hit_count }} |
+
+---
+
+## 三、信息功能与主情绪分布
+
+### 3.1 信息功能类别分布
+
+{{ info_type_table }}
+
+### 3.2 主情绪分布
+
+{{ emotion_table }}
+
+### 3.3 分类评估
+
+- Macro-F1：{{ macro_f1 }}
+- 求助/紧急需求 召回率：{{ rescue_recall }}
+- 评估基于 70 条锁定测试集，测试集未参与 Prompt 调整
+
+---
+
+## 四、代表性脱敏记录
+
+{% for record in representative_records %}
+### 记录 {{ loop.index }}
+
+- **信息功能**：{{ record.information_types | join("、") }}
+- **主情绪**：{{ record.primary_emotion }}
+- **证据状态**：{{ record.evidence_status }}
+- **文本**：{{ record.text_clean }}
+- **来源追溯**：`{{ record.source_ref }}`
+
+{% endfor %}
+
+---
+
+## 五、可见讨论中的信息缺口
+
+{% for gap in information_gaps %}
+- {{ gap }}
+{% endfor %}
+
+{% if not information_gaps %}
+（本次分析中未识别出明确的信息缺口，或数据不足以判断。）
+{% endif %}
+
+---
+
+## 六、独立外部资料与空间参照
+
+{% for ref in external_references %}
+- **{{ ref.title }}**（{{ ref.time_attribute }}）：{{ ref.summary }}
+{% endfor %}
+
+> ⚠️ 以上外部资料与主文本语料来自不同数据源，仅做并列展示。CrowdFlood 空间参照与社交媒体帖子不构成逐条关联，不得解释为单条帖子的位置确认。
+
+---
+
+## 七、评估结果、偏差与使用边界
+
+### 7.1 已知局限
+
+- 本文本语料来自 {{ data_source }}，仅反映该平台用户群体的可见讨论
+- 所有分类标签为 {{ model_version }} 的模型预测结果，未经大规模人工核验
+- 数据覆盖的时间和空间范围有限，不可推广到本次暴雨事件的全体公众
+- 外部气象资料中标注了"事中可用"和"事后复盘"，事中与事后资料已在简报中分开展示
+
+### 7.2 证据类型说明
+
+| 标识 | 含义 |
+|------|------|
+| 📄 数据集记录 | 冻结语料中存在该条帖子 |
+| 👤 人工标签 | 课程成员完成的人工标注 |
+| 🤖 模型预测 | 模型输出，未经人工确认 |
+| 🔗 外部资料 | 来自独立权威数据源 |
+
+---
+
+*本简报用于课程技术演示，仅归纳冻结数据中的可见讨论，不代表真实灾情、总体公众需求或权威结论。所有关键数字可由输入数据重算，来源引用可通过 `source_ref` 在原数据中追溯。*

@@ -28,6 +28,9 @@ data/raw/*
 data/frozen/*
 !data/frozen/.gitkeep
 !data/frozen/manifest.json
+data/reference/*
+!data/reference/.gitkeep
+!data/reference/source_manifest.md
 data/processed/*
 !data/processed/.gitkeep
 data/analyzed/*

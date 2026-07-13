@@ -1,0 +1,16 @@
+# ====== 核心依赖 ======
+pandas>=2.0
+openai>=1.0           # LLM API 调用（兼容 Qwen / DeepSeek）
+python-dotenv>=1.0    # 环境变量管理
+pyyaml>=6.0           # YAML 配置读写
+jsonschema>=4.20      # JSON Schema 校验
+jinja2>=3.1           # 简报模板引擎
+matplotlib>=3.8       # 离线图表
+pytest>=7.0           # 测试框架
+
+# ====== 可选增强 ======
+jieba>=0.42           # 中文分词（仅用于 taxonomy 关键词匹配，不做地理编码）
+scikit-learn>=1.3     # 分类评估指标
+
+# ====== 看板 ======
+streamlit>=1.30       # 离线看板，只读取冻结产物
