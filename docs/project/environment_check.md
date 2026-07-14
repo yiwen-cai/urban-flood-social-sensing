@@ -15,6 +15,7 @@
 | 环境 | 全新 `python3 -m venv`（非项目现有 `.venv`），零手动干预 |
 | 依赖安装命令 | `pip install -r requirements.txt` |
 | 依赖安装结果 | 成功，无报错 |
+| `requirements.lock` | 已生成（`pip freeze` 于纯净环境导出，含全部间接依赖），并用该 lock 文件重新装环境验证 `run_pipeline.sh --fixture --offline` 仍通过 |
 | `run_pipeline.sh --fixture --offline` | 通过，耗时约 0.25 秒，退出码 0 |
 | `src/lab1_collection/clean.py --split test` | 通过，1,582 条全部清洗成功 |
 | 断网模拟 | `--fixture --offline` 模式不触发任何网络请求（不调用 `fetch_data.py` 的下载逻辑，仅 `--verify-only` 路径读本地文件） |
