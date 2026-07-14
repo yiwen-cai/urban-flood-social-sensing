@@ -177,8 +177,8 @@ def evaluate_model(
         pred = lab2.get("predicted_label")
         model_ver = lab2.get("model_version", "")
 
-        # Only include records that match this model version
-        if model_key not in model_ver:
+        # Only include records that match this model version exactly
+        if model_ver != model_key:
             continue
         if ref is None:
             continue  # skip records without reference labels

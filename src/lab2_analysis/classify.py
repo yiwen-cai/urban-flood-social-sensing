@@ -117,21 +117,28 @@ class BaselineClassifier:
 
 
 def _load_humaid_split(path: Path) -> tuple[list[str], list[str]]:
-    """Load a HumAID JSON file and return (texts, labels)."""
+    """Load a HumAID JSON file and return (redacted texts, labels).
+
+    Applies redact_text so that the TF-IDF vocabulary matches the redacted
+    text_clean field produced by Lab 1's standardize.py during inference.
+    """
+    from src.utils.redact import redact_text
     with path.open(encoding="utf-8") as handle:
         rows = json.load(handle)
-    texts = [r["tweet_text"] for r in rows]
+    texts = [redact_text(r["tweet_text"]) for r in rows]
     labels = [r["class_label"] for r in rows]
     return texts, labels
 
 
 def train_baseline() -> BaselineClassifier:
-    """Train a baseline classifier on the official train split."""
-    train_texts, train_labels = _load_humaid_split(TRAIN_PATH)
-    dev_texts, dev_labels = _load_humaid_split(DEV_PATH)
+    """Train a baseline classifier on the official train split.
 
-    # Train on train; optionally use dev to guide C selection
-    # (simplified: fixed C=1.0 for reproducibility)
+    Text is redacted (via _load_humaid_split) so the TF-IDF vocabulary
+    matches the redacted text_clean used during inference. Dev split is
+    reserved for few-shot example selection; hyperparameter tuning on dev
+    is deferred (C=1.0 is a reasonable default for a course baseline).
+    """
+    train_texts, train_labels = _load_humaid_split(TRAIN_PATH)
     clf = BaselineClassifier(max_features=5000, C=1.0)
     clf.train(train_texts, train_labels)
     return clf
@@ -301,8 +308,9 @@ def run_llm_classification(
 
         if br.get("success"):
             label = br["label"]
-            confidence = br.get("confidence", 1.0)
-            scores = {label: float(confidence)} if label else {}
+            raw_conf = br.get("confidence")
+            confidence = float(raw_conf) if raw_conf is not None else 1.0
+            scores = {label: confidence} if label else {}
             record["_lab2"] = {
                 "reference_label": None,
                 "predicted_label": label,
@@ -442,7 +450,7 @@ def main() -> int:
             all_annotated = annotated
         else:
             # both mode: keep a copy of the baseline result for side-by-side eval
-            bl_path = Path(str(args.output).replace(".jsonl", ".baseline.jsonl"))
+            bl_path = args.output.with_suffix(".baseline.jsonl")
             if args.merge_reference:
                 annotated = merge_reference_labels(annotated)
             write_jsonl(bl_path, annotated)

@@ -39,6 +39,10 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_BASE = 2.0   # seconds — doubled each retry
 RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
 
+# Module-level flag: set False after first json_schema failure so every
+# subsequent call uses json_object without wasting an API attempt.
+_use_json_schema = True
+
 
 # ---------------------------------------------------------------------------
 # Prompt templates
@@ -191,7 +195,8 @@ def classify_text(
 
     # Prefer json_schema (stricter), fall back to json_object for older
     # DeepSeek endpoints that only support {"type": "json_object"}.
-    _use_json_schema = True  # set False if smoke test fails
+    # Module-level so the fallback is detected once per session, not per call.
+    global _use_json_schema
 
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -345,7 +350,6 @@ def classify_batch(
         )
 
         result = {
-            "post_id": post_id,
             "label": api_result["label"],
             "confidence": api_result["confidence"],
             "success": api_result["success"],

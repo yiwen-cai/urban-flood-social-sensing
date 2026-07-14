@@ -105,9 +105,11 @@ def export_sample(
     """Export a sample to JSONL with empty emotion placeholder.
 
     Each line:
-        {"tweet_id": ..., "tweet_text": ..., "class_label": ...,
+        {"tweet_id": ..., "text_clean": ..., "class_label": ...,
          "exploratory_emotion": null, "annotator": "..."}
     """
+    from src.utils.redact import redact_text
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -115,7 +117,7 @@ def export_sample(
         for r in records:
             entry = {
                 "tweet_id": str(r.get("tweet_id", "")),
-                "tweet_text": r.get("tweet_text", ""),
+                "text_clean": redact_text(r.get("tweet_text", "")),
                 "class_label": r.get("class_label", ""),
                 "exploratory_emotion": None,
             }
@@ -132,18 +134,20 @@ def export_csv_for_annotation(
 ) -> int:
     """Export a sample as CSV for external annotation (e.g., in Excel/Sheets).
 
-    Columns: tweet_id, tweet_text, class_label, exploratory_emotion
+    Columns: tweet_id, text_clean (redacted), class_label, exploratory_emotion
     """
+    from src.utils.redact import redact_text
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["tweet_id", "tweet_text", "class_label", "exploratory_emotion"])
+        writer.writerow(["tweet_id", "text_clean", "class_label", "exploratory_emotion"])
         for r in records:
             writer.writerow([
                 str(r.get("tweet_id", "")),
-                r.get("tweet_text", ""),
+                redact_text(r.get("tweet_text", "")),
                 r.get("class_label", ""),
                 "",  # to be filled in manually
             ])
@@ -169,6 +173,11 @@ def compute_iaa(
             tid = entry.get("tweet_id", "")
             emotion = entry.get("exploratory_emotion")
             if emotion:
+                if emotion not in EMOTION_LABELS:
+                    raise ValueError(
+                        f"Invalid emotion label '{emotion}' for tweet {tid}. "
+                        f"Must be one of: {EMOTION_LABELS}"
+                    )
                 mapping[tid] = emotion
         return mapping
 
@@ -320,6 +329,13 @@ def main() -> int:
                 tid = entry.get("tweet_id", "")
                 emotion = entry.get("exploratory_emotion")
                 if tid and emotion:
+                    if emotion not in EMOTION_LABELS:
+                        print(
+                            f"Warning: skipping invalid emotion '{emotion}' "
+                            f"for tweet {tid}. Must be one of: {EMOTION_LABELS}",
+                            file=sys.stderr,
+                        )
+                        continue
                     emotion_map[tid] = emotion
 
         # Load posts_labeled.jsonl

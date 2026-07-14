@@ -22,7 +22,10 @@ class ClassificationCache:
     The in-memory dict avoids O(n²) file reads during batch processing.
     """
 
-    def __init__(self, cache_dir: str | Path = "data/cache") -> None:
+    def __init__(self, cache_dir: str | Path | None = None) -> None:
+        if cache_dir is None:
+            from pathlib import Path as _Path
+            cache_dir = _Path(__file__).resolve().parents[2] / "data" / "cache"
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._loaded: dict[str, dict[str, dict[str, Any]]] = {}
