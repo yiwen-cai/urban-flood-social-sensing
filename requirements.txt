@@ -1,2 +1,8 @@
 jsonschema>=4.20,<5
 pytest>=8,<10
+jinja2>=3,<4
+streamlit>=1,<2
+matplotlib>=3,<4
+pandas>=2,<4
+plotly>=5,<7
+numpy>=1,<3
