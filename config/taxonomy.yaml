@@ -1,0 +1,99 @@
+# Keyword taxonomy for Lab 1 collection/triage. This groups high-frequency
+# terms observed in the frozen Kerala floods 2018 corpus (7,984 records,
+# train+dev+test) into semantic buckets. This is a triage/display aid, not a
+# labeling schema — the actual classification labels are frozen in
+# config/labeling_schema.yaml and must not be duplicated or overridden here.
+#
+# Source: word/hashtag frequency scan over
+# data/raw/humaid/kerala_floods_2018/{train,dev,test}.json. Counts noted
+# inline are approximate and only meant to justify why a term was proposed.
+#
+# Team-confirmed groupings: celebrity/fandom donation-drive mentions
+# (thalapathy, vijay) and overseas funding mentions (uae) are folded into
+# relief_and_donation; the neighboring-event term (kodagufloods) and the
+# festival-season term (onam) are folded into event.
+
+schema_version: "1.0.0"
+
+event:
+  description: "Event and location identifiers"
+  keywords:
+    - kerala
+    - keralafloods       # 4149 hashtag occurrences
+    - keralaflood
+    - keralafloods2018
+    - keralarains
+    - ernakulam
+    - chengannur
+    - kodagufloods
+    - onam
+
+urgent_need:
+  description: "Requests for rescue or urgent needs"
+  keywords:
+    - help
+    - please
+    - rescue
+    - keralarescue
+    - keralafloodrescue
+    - keralasos
+    - soskerala
+    - stranded
+    - need
+    - keralafloodshelpneeded
+
+relief_and_donation:
+  description: "Relief funds, donation drives, volunteering"
+  keywords:
+    - relief
+    - donate
+    - donated
+    - fund
+    - crore
+    - aid
+    - keralafloodrelief
+    - keralarelieffund
+    - donate4kerala
+    - keraladonationchallenge
+    - doforkerala
+    - opmadad
+    - rfforkerala
+    - volunteers
+    - materials
+    - camps
+    - thalapathy
+    - vijay
+    - uae
+
+damage_and_impact:
+  description: "Infrastructure damage and disaster impact"
+  keywords:
+    - affected
+    - victims
+    - water
+    - food
+    - hit
+    - disaster
+    - areas
+
+support_and_solidarity:
+  description: "Sympathy, solidarity, mobilization calls"
+  keywords:
+    - standwithkerala
+    - prayforkerala
+    - savekerala
+    - rebuildkerala
+    - rebuildingkerala
+    - helpkerala
+    - indiaforkerala
+    - support
+
+institutional:
+  description: "Government, official response, institutional actors"
+  keywords:
+    - govt
+    - government
+    - minister
+    - state
+    - india
+    - team
