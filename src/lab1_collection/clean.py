@@ -12,7 +12,11 @@ from src.utils.io import write_jsonl
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = PROJECT_ROOT / "data" / "frozen" / "manifest.json"
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "processed" / "posts_clean.jsonl"
+PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
+
+
+def default_output_for_split(split: str) -> Path:
+    return PROCESSED_DIR / f"posts_clean.{split}.jsonl"
 
 
 def load_raw_split(path: Path) -> list[dict[str, Any]]:
@@ -39,16 +43,17 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--split", default="test", help="manifest split to clean")
     parser.add_argument("--pipeline-run-id", default="kerala-v1")
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
+    output = args.output or default_output_for_split(args.split)
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     entry = next(e for e in manifest["files"] if e["split"] == args.split)
     raw_rows = load_raw_split(PROJECT_ROOT / entry["path"])
 
     cleaned = clean_split(raw_rows, split=args.split, pipeline_run_id=args.pipeline_run_id)
-    write_jsonl(args.output, cleaned)
-    print(f"cleaned {len(cleaned)} of {len(raw_rows)} raw records -> {args.output}")
+    write_jsonl(output, cleaned)
+    print(f"cleaned {len(cleaned)} of {len(raw_rows)} raw records -> {output}")
     return 0
 
 
