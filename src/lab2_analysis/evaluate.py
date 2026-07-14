@@ -64,7 +64,8 @@ def compute_metrics(
         precision_recall_fscore_support,
     )
 
-    # Filter out None predictions
+    # Filter out None predictions (LLM parse failures)
+    excluded = sum(1 for p in y_pred if p is None)
     valid = [(t, p) for t, p in zip(y_true, y_pred) if p is not None]
     if not valid:
         return {
@@ -73,6 +74,7 @@ def compute_metrics(
             "per_class": [],
             "classification_report": "No valid predictions.",
             "confusion_matrix": None,
+            "excluded_failures": excluded,
         }
     y_true_f, y_pred_f = zip(*valid)
 
@@ -293,8 +295,15 @@ def generate_evaluation_report(
         lines.append("| Metric | Baseline (TF-IDF+LR) | LLM (DeepSeek) |")
         lines.append("|--------|----------------------|----------------|")
 
-        baseline = all_results[0] if all_results else {}
-        llm = all_results[1] if len(all_results) > 1 else {}
+        # Match by model_version, not list index (alphabetical order is unreliable)
+        def _by_model(versions: list[dict], keyword: str) -> dict:
+            for v in versions:
+                if keyword in v.get("model_version", ""):
+                    return v
+            return {}
+
+        baseline = _by_model(all_results, "tfidf")
+        llm = _by_model(all_results, "deepseek")
 
         def _get(key: str, results: dict) -> str:
             val = results.get(key, "N/A")

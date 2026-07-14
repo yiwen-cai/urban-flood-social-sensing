@@ -8,9 +8,9 @@ Two classifiers:
 2. **DeepSeek Few-shot** — LLM classification with JSON Schema output.
 
 Usage:
-    python -m src.lab2_analysis.classify --input data/processed/posts_clean.jsonl
-    python -m src.lab2_analysis.classify --input data/processed/posts_clean.jsonl --method baseline
-    python -m src.lab2_analysis.classify --input data/processed/posts_clean.jsonl --method llm
+    python -m src.lab2_analysis.classify --input data/processed/posts_clean.test.jsonl
+    python -m src.lab2_analysis.classify --input data/processed/posts_clean.test.jsonl --method baseline
+    python -m src.lab2_analysis.classify --input data/processed/posts_clean.test.jsonl --method llm
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import numpy as np
 # Project paths
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT = PROJECT_ROOT / "data" / "processed" / "posts_clean.jsonl"
+DEFAULT_INPUT = PROJECT_ROOT / "data" / "processed" / "posts_clean.test.jsonl"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "analyzed" / "posts_labeled.jsonl"
 DEFAULT_ERRORS = PROJECT_ROOT / "data" / "analyzed" / "classification_errors.jsonl"
 TRAIN_PATH = PROJECT_ROOT / "data" / "raw" / "humaid" / "kerala_floods_2018" / "train.json"
@@ -154,6 +154,8 @@ def select_few_shot_examples(
         List of {"text": ..., "label": ...} dicts, frozen for Prompt use.
     """
     import random
+    from src.utils.redact import redact_text
+
     random.seed(random_seed)
 
     # Pool from train and dev only — NEVER from test
@@ -175,7 +177,7 @@ def select_few_shot_examples(
             candidates, min(samples_per_class, len(candidates))
         )
         for text in selected:
-            examples.append({"text": text, "label": label})
+            examples.append({"text": redact_text(text), "label": label})
 
     random.shuffle(examples)
     return examples
@@ -430,6 +432,7 @@ def main() -> int:
 
     all_annotated: list[dict[str, Any]] = []
     all_errors: list[dict[str, Any]] = []
+    baseline_written = False
 
     # --- Baseline ---
     if args.method in ("baseline", "both"):
@@ -437,19 +440,27 @@ def main() -> int:
         annotated, _ = run_baseline_classification(args.input)
         if args.method == "baseline":
             all_annotated = annotated
+        else:
+            # both mode: keep a copy of the baseline result for side-by-side eval
+            bl_path = Path(str(args.output).replace(".jsonl", ".baseline.jsonl"))
+            if args.merge_reference:
+                annotated = merge_reference_labels(annotated)
+            write_jsonl(bl_path, annotated)
+            baseline_written = True
+            print(f"  Baseline classified {len(annotated)} records → {bl_path}")
+            # reuse the baseline texts for LLM (same input)
         print(f"  Baseline classified {len(annotated)} records")
 
     # --- LLM ---
     if args.method in ("llm", "both"):
         print("Running LLM classification (DeepSeek)...")
         annotated, errors = run_llm_classification(args.input)
-        if args.method == "llm":
-            all_annotated = annotated
+        all_annotated = annotated
         all_errors = errors
         print(f"  LLM classified {len(annotated)} records, {len(errors)} errors")
 
     # --- Merge reference labels ---
-    if args.merge_reference:
+    if args.merge_reference and all_annotated:
         all_annotated = merge_reference_labels(all_annotated)
 
     # --- Write outputs ---

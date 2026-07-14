@@ -189,18 +189,44 @@ def classify_text(
 
     last_error: str | None = None
 
+    # Prefer json_schema (stricter), fall back to json_object for older
+    # DeepSeek endpoints that only support {"type": "json_object"}.
+    _use_json_schema = True  # set False if smoke test fails
+
     for attempt in range(MAX_RETRIES + 1):
         try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": CLASSIFICATION_JSON_SCHEMA,
-                },
-            )
+            if _use_json_schema:
+                try:
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": CLASSIFICATION_JSON_SCHEMA,
+                        },
+                    )
+                except Exception as exc:
+                    if "json_schema" in str(exc).lower() or "400" in str(exc):
+                        _use_json_schema = False
+                        response = client.chat.completions.create(
+                            model=model_name,
+                            messages=messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            response_format={"type": "json_object"},
+                        )
+                    else:
+                        raise
+            else:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                )
 
             raw = response.choices[0].message.content
 

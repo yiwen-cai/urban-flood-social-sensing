@@ -332,8 +332,11 @@ def main() -> int:
         updated = 0
         for r in records:
             pid = r.get("post_id", "")
-            if pid in emotion_map and "_lab2" in r:
-                r["_lab2"]["exploratory_emotion"] = emotion_map[pid]
+            # Strip Lab 1 split prefix: "test:103243..." → "103243..."
+            tid = pid.split(":", 1)[-1] if ":" in pid else pid
+            lab2 = r.get("_lab2")
+            if tid in emotion_map and isinstance(lab2, dict):
+                lab2["exploratory_emotion"] = emotion_map[tid]
                 updated += 1
 
         output_path = Path(args.output) if args.output else labeled_path

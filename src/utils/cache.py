@@ -19,12 +19,13 @@ class ClassificationCache:
     Each cache entry is stored as a JSONL line:
         {"key": "<model>:<sha256>", "result": {...}}
 
-    This allows appending new results without rewriting the entire file.
+    The in-memory dict avoids O(n²) file reads during batch processing.
     """
 
     def __init__(self, cache_dir: str | Path = "data/cache") -> None:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._loaded: dict[str, dict[str, dict[str, Any]]] = {}
 
     def _cache_path(self, model_version: str) -> Path:
         safe = model_version.replace("/", "_").replace(" ", "_")
@@ -34,13 +35,15 @@ class ClassificationCache:
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
         return f"{model_version}:{digest}"
 
-    def get(self, model_version: str, text: str) -> dict[str, Any] | None:
-        """Return cached result or None."""
+    def _ensure_loaded(self, model_version: str) -> dict[str, dict[str, Any]]:
+        """Load cache into memory once per model version."""
+        if model_version in self._loaded:
+            return self._loaded[model_version]
         cache_path = self._cache_path(model_version)
         if not cache_path.is_file():
-            return None
-        needle = self._make_key(model_version, text)
-        # Linear scan over a modest cache file; for 1,582 records this is fine
+            self._loaded[model_version] = {}
+            return {}
+        loaded: dict[str, dict[str, Any]] = {}
         for line in cache_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
@@ -48,47 +51,45 @@ class ClassificationCache:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if entry.get("key") == needle:
-                return entry.get("result")
-        return None
+            loaded[entry.get("key", "")] = entry.get("result", {})
+        self._loaded[model_version] = loaded
+        return loaded
+
+    def get(self, model_version: str, text: str) -> dict[str, Any] | None:
+        """Return cached result or None (O(1) after first load)."""
+        loaded = self._ensure_loaded(model_version)
+        return loaded.get(self._make_key(model_version, text))
 
     def put(
         self, model_version: str, text: str, result: dict[str, Any]
     ) -> None:
-        """Store a classification result in the cache."""
-        entry = {
-            "key": self._make_key(model_version, text),
-            "result": result,
-        }
+        """Store a classification result in the cache (disk + memory)."""
+        key = self._make_key(model_version, text)
+        entry = {"key": key, "result": result}
         cache_path = self._cache_path(model_version)
         with cache_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        if model_version not in self._loaded:
+            self._ensure_loaded(model_version)
+        self._loaded[model_version][key] = result
 
     def load_all(
         self, model_version: str
     ) -> dict[str, dict[str, Any]]:
-        """Load entire cache for a model version into a dict keyed by cache key."""
-        cache_path = self._cache_path(model_version)
-        if not cache_path.is_file():
-            return {}
-        results: dict[str, dict[str, Any]] = {}
-        for line in cache_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            results[entry["key"]] = entry["result"]
-        return results
+        """Return all cached entries for a model version (from memory)."""
+        return dict(self._ensure_loaded(model_version))
 
     def stats(self, model_version: str) -> dict[str, int]:
         """Return basic stats about the cache."""
         all_entries = self.load_all(model_version)
         return {
             "cached_entries": len(all_entries),
-            "success_count": sum(1 for v in all_entries.values() if v.get("success", True)),
-            "error_count": sum(1 for v in all_entries.values() if not v.get("success", True)),
+            "success_count": sum(
+                1 for v in all_entries.values() if v.get("success", True)
+            ),
+            "error_count": sum(
+                1 for v in all_entries.values() if not v.get("success", True)
+            ),
         }
 
 
