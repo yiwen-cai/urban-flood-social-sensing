@@ -81,9 +81,11 @@ def sample_stratified(
         if remaining <= 0:
             break
         extra = max(0, int(len(by_label[lbl]) / total_records * remaining))
-        allocation[lbl] += min(extra, len(by_label[lbl]) - 1)
+        capped = min(extra, len(by_label[lbl]) - 1, remaining)
+        allocation[lbl] += capped
+        remaining -= capped
 
-    # Sample
+    # Sample — truncate to n_total if rounding pushed us over
     sample: list[dict[str, Any]] = []
     for lbl, n in allocation.items():
         pool = by_label[lbl]
@@ -91,7 +93,7 @@ def sample_stratified(
         sample.extend(selected)
 
     random.shuffle(sample)
-    return sample
+    return sample[:n_total]
 
 
 def export_sample(

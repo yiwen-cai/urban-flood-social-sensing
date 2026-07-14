@@ -107,6 +107,7 @@ def compute_metrics(
         "per_class": per_class,
         "classification_report": report,
         "confusion_matrix": cm,
+        "excluded_failures": excluded,
     }
 
 
