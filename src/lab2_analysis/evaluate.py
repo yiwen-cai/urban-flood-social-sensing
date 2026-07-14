@@ -260,6 +260,9 @@ def generate_evaluation_report(
         lines.append(f"- **Records**: {result.get('total_records', 'N/A')}")
         lines.append(f"- **Macro-F1**: {result.get('macro_f1', 'N/A')}")
         lines.append(f"- **Weighted-F1**: {result.get('weighted_f1', 'N/A')}")
+        excluded = result.get('excluded_failures', 0)
+        if excluded:
+            lines.append(f"- **Excluded (classification failures)**: {excluded}")
         lines.append("")
 
         if result.get("per_class"):

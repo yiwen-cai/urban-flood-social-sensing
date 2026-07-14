@@ -440,7 +440,6 @@ def main() -> int:
 
     all_annotated: list[dict[str, Any]] = []
     all_errors: list[dict[str, Any]] = []
-    baseline_written = False
 
     # --- Baseline ---
     if args.method in ("baseline", "both"):
@@ -448,16 +447,14 @@ def main() -> int:
         annotated, _ = run_baseline_classification(args.input)
         if args.method == "baseline":
             all_annotated = annotated
+            print(f"  Baseline classified {len(annotated)} records")
         else:
             # both mode: keep a copy of the baseline result for side-by-side eval
             bl_path = args.output.with_suffix(".baseline.jsonl")
             if args.merge_reference:
                 annotated = merge_reference_labels(annotated)
             write_jsonl(bl_path, annotated)
-            baseline_written = True
             print(f"  Baseline classified {len(annotated)} records → {bl_path}")
-            # reuse the baseline texts for LLM (same input)
-        print(f"  Baseline classified {len(annotated)} records")
 
     # --- LLM ---
     if args.method in ("llm", "both"):
@@ -470,6 +467,13 @@ def main() -> int:
     # --- Merge reference labels ---
     if args.merge_reference and all_annotated:
         all_annotated = merge_reference_labels(all_annotated)
+    elif all_annotated and not args.merge_reference:
+        print(
+            "Note: --merge-reference not set. reference_label will be null "
+            "in the output, and evaluate.py will produce empty metrics. "
+            "Add --merge-reference to include official reference labels.",
+            file=sys.stderr,
+        )
 
     # --- Write outputs ---
     if all_annotated:
