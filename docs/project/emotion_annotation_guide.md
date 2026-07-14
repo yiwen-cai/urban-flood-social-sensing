@@ -2,7 +2,7 @@
 
 > 交付物：D04（情绪标注部分）  
 > 负责人：成员 B（工具 + IAA）  
-> 标注人：成员 A + 成员 B（两人独立标注同一批数据）  
+> 标注人：成员 A + 成员 B + 成员 C（三人独立标注同一批数据）  
 > 截止：Day 2 上午
 
 ---
@@ -33,9 +33,17 @@ git checkout lab2/analysis-baseline-llm
 git pull origin lab2/analysis-baseline-llm
 ```
 
-### 2.2 打开标注文件
+### 2.2 认领标注文件
 
-标注文件位于 `data/seed/emotion_dev_member_a.jsonl`，已包含 14 条待标注记录。每条记录格式如下：
+每位成员对应一个标注文件，内容相同（14 条同一批记录），需**独立标注**，标注完成前不要互相讨论：
+
+| 成员 | 文件路径 | 状态 |
+|------|----------|------|
+| 成员 A | `data/seed/emotion_dev_member_a.jsonl` | ⏳ 待标注 |
+| 成员 B | `data/seed/emotion_dev_member_b.jsonl` | ✅ 已完成 |
+| 成员 C | `data/seed/emotion_dev_member_c.jsonl` | ⏳ 待标注 |
+
+每条记录格式如下：
 
 ```json
 {
@@ -47,7 +55,7 @@ git pull origin lab2/analysis-baseline-llm
 }
 ```
 
-**你需要做的**：将每条记录的 `"exploratory_emotion": null` 替换为五个标签之一，例如：
+**你需要做的**：打开你对应的文件，将每条记录的 `"exploratory_emotion": null` 替换为五个标签之一。例如将 `"annotator": "member_a"` 的文件中的 `null` 改为：
 
 ```json
 "exploratory_emotion": "fear_or_anxiety"
@@ -55,7 +63,7 @@ git pull origin lab2/analysis-baseline-llm
 
 ### 2.3 标注方法
 
-在 IDE（VS Code）中直接打开 `data/seed/emotion_dev_member_a.jsonl`，逐行编辑 `exploratory_emotion` 字段。
+在 IDE（VS Code）中直接打开你的标注文件，逐行编辑 `exploratory_emotion` 字段。
 
 或者在 Python 中交互式标注：
 
@@ -93,9 +101,17 @@ print(f'\nSaved {len(records)} annotations to {path}')
 
 ### 2.5 推送标注结果
 
+成员 A 和 C 各自标注完成后，分别推送（注意文件名对应自己的）：
+
 ```bash
+# 成员 A:
 git add data/seed/emotion_dev_member_a.jsonl
 git commit -m "annotate(emotion): member A completes 14 dev annotations"
+git push origin lab2/analysis-baseline-llm
+
+# 成员 C:
+git add data/seed/emotion_dev_member_c.jsonl
+git commit -m "annotate(emotion): member C completes 14 dev annotations"
 git push origin lab2/analysis-baseline-llm
 ```
 
@@ -103,17 +119,28 @@ git push origin lab2/analysis-baseline-llm
 
 ## 三、验收标准（IAA）
 
-标注完成后，成员 B 运行 IAA 计算：
+成员 A 和 C 推送后，成员 B 运行三组两两 IAA：
 
 ```bash
+# A ↔ B
 python -m src.lab2_analysis.annotate_seed iaa \
   data/seed/emotion_dev_member_b.jsonl \
   data/seed/emotion_dev_member_a.jsonl
+
+# B ↔ C
+python -m src.lab2_analysis.annotate_seed iaa \
+  data/seed/emotion_dev_member_b.jsonl \
+  data/seed/emotion_dev_member_c.jsonl
+
+# A ↔ C
+python -m src.lab2_analysis.annotate_seed iaa \
+  data/seed/emotion_dev_member_a.jsonl \
+  data/seed/emotion_dev_member_c.jsonl
 ```
 
-**合格标准**：Cohen's κ ≥ 0.6
+**合格标准**：三组 Cohen's κ 均 ≥ 0.6（或平均 κ ≥ 0.6）
 
-若 κ < 0.6，两人讨论分歧记录后修正，重新计算。
+若某组 κ < 0.6，三人讨论分歧记录后修正，重新计算。
 
 ---
 
