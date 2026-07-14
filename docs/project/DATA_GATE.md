@@ -76,8 +76,8 @@ Consequences for this repository:
 - [x] Synthetic fixture policy established
 - [x] DeepSeek selected; default smoke-test model is `deepseek-v4-flash`
 - [x] Team confirms whether redacted real text may be sent to the DeepSeek API
-- [ ] Demonstration machine passes dependency installation and offline fixture test
+- [x] Demonstration machine passes dependency installation and offline fixture test (lightweight pass; see `docs/project/environment_check.md`)
 
 **Team decision (2026-07-14):** the team approves sending redacted real text to the DeepSeek API. This applies only to text that has passed the `src/utils/redact.py` pipeline (`pii_redacted: true` in `posts_clean.*.jsonl`); raw, unredacted text must still never be sent to any third-party API. This unblocks Lab 2 from running real-text classification against `test`/`train`/`dev`, subject to the stricter QCRI research-only and confidentiality terms in section 5.
 
-The gate is sufficient to begin fixture-based implementation. Real-text API classification is now unblocked; the remaining open item (demonstration machine check) does not block Lab 1/2 development.
+All gate items are now checked. A full re-check covering Lab 2/3 dependencies and a real offline test is still required before Day 3/4 feature freeze (see `docs/project/environment_check.md` section 3).
