@@ -124,8 +124,8 @@ with tab1:
                  help=f"text_clean 为空: {missing_text} 条")
     col_b.metric("模型预测缺失", f"{missing_pred}/{total}" if missing_pred else "0%",
                  help=f"predicted_label 为空: {missing_pred} 条")
-    col_c.metric("重复 post_id", f"{dupes} 条" if dupes else "0 条",
-                 help=f"唯一 post_id: {dq.get('unique_post_ids', total)}")
+    col_c.metric("重复 (post_id, model)", f"{dupes} 条" if dupes else "0 条",
+                 help=f"唯一 post_id: {dq.get('unique_post_ids', total)}，唯一 (id,model) 对: {dq.get('unique_model_pairs', total)}")
 
     st.markdown("#### 数据字段与处理说明")
     st.markdown("""

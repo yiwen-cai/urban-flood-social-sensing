@@ -45,6 +45,7 @@ def compute_metrics(posts: list[dict]) -> dict:
     missing_ref = 0
     missing_pred = 0
     post_ids: set[str] = set()
+    id_model_pairs: set[tuple[str, str]] = set()
     duplicates = 0
 
     for p in posts:
@@ -60,8 +61,11 @@ def compute_metrics(posts: list[dict]) -> dict:
         if not lab2.get("predicted_label"):
             missing_pred += 1
         pid = p.get("post_id", "")
-        if pid in post_ids:
+        model = lab2.get("model_version", "")
+        pair = (pid, model)
+        if pair in id_model_pairs:
             duplicates += 1
+        id_model_pairs.add(pair)
         post_ids.add(pid)
 
         ref = lab2.get("reference_label")
@@ -107,12 +111,16 @@ def compute_metrics(posts: list[dict]) -> dict:
         "evidence_status_distribution": dict(evidence_status_counts),
         "data_quality": {
             "unique_post_ids": len(post_ids),
+            "unique_model_pairs": len(id_model_pairs),
             "duplicate_ids": duplicates,
             "missing_text_clean": missing_text,
             "missing_reference_label": missing_ref,
             "missing_predicted_label": missing_pred,
-            "time_null": total,   # all records — by design per DATA_GATE.md
-            "location_null": total,
+            "note": (
+                f"{len(post_ids)} unique post_ids among {total} records "
+                f"({len(id_model_pairs)} unique (post_id, model) pairs, "
+                f"{duplicates} duplicate pairs)"
+            ) if len(post_ids) < total else "",
         },
     }
 
