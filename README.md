@@ -1,84 +1,55 @@
 # Urban Flood Social Sensing
 
-面向社会计算课程实践的 Kerala 2018 洪水社交媒体人道信息分析项目。项目以 HumAID 单事件冻结语料为输入，完成数据治理、传统 baseline 与 LLM 的 9 类人道信息分类对比、探索性情绪分析、结构化聚合，以及可追溯的中文课程简报和离线看板。
+面向社会计算课程实践的 Kerala 2018 洪水社交媒体人道信息分析项目。以 HumAID 单事件冻结语料为输入，完成数据治理、baseline 与 LLM 的 9 类人道信息分类对比、探索性情绪分析、D07 结构化聚合，以及可追溯的中文课程简报和离线看板。
 
-> 当前状态：总体方案与三人接口契约已完成；数据清单、下载校验器、JSON Schema 和 20 条合成契约样例已经落地，其余流水线模块尚待实现。
+> 当前状态：课程发布级 tip 已清理真实推文正文；`posts_labeled` 一帖一行，预测独立写入 `predictions.jsonl`；`bash run_pipeline.sh --fixture --offline` 可在无 raw 数据、无 API key、无网络时跑通。
 
 ## 项目边界
 
 - 历史事件复盘型课程技术演示，不是实时灾情监测系统；
 - 不发布预警、救援建议或权威灾情结论；
-- 主流程固定使用 HumAID `kerala_floods_2018` 官方 test split 的 1,582 条记录；
-- 数据没有逐帖时间和地点，不生成地图、时间趋势或时空推断；
-- 原始社交媒体数据、个人信息和 API 密钥不进入仓库；
+- 主流程固定使用 HumAID `kerala_floods_2018` 官方 test split 的 1,582 条唯一帖子；
+- 数据没有逐帖时间和地点，不生成地图或时空推断；
+- 原始社交媒体正文与 API 密钥不进入当前 tip；公开 tip 仅含聚合指标与合成样例；
+- Git 历史未重写，历史 blob 仍可能含真实正文（见 `docs/project/DATA_GATE.md` §8）；
 - 核心演示必须支持断网运行。
 
 ## 三个模块
 
-| 模块 | 负责人 | 输入 | 输出 |
-|------|--------|------|------|
-| Lab 1 数据采集与清洗 | 成员 A | 冻结原始数据 | `posts_clean.jsonl`、数据质量报告 |
-| Lab 2 情感与观点分析 | 成员 B | Lab 1 清洗结果 | `posts_labeled.jsonl`、评估报告 |
-| Lab 3 生成式信息支持 | 成员 C | Lab 2 标签结果 | 课程分析简报、离线看板与演示包 |
+| 模块 | 输入 | 输出 |
+|------|------|------|
+| Lab 1 数据采集与清洗 | 冻结原始数据 / fixture | `posts_clean*.jsonl`、数据质量报告 |
+| Lab 2 分类与评估 | Lab 1 清洗结果 | `posts_labeled.jsonl` + `predictions.jsonl`、评估报告 |
+| Lab 3 决策支持 | Lab 2 结果 | D07 `metrics.json` / `evidence.jsonl`、简报、离线看板 |
 
-详细数据契约、交接节点和验收标准见[项目实施方案](docs/project/实施方案.md)。
+## 快速开始（clean clone / 离线）
 
-## 仓库结构
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.lock   # 或 requirements.txt
+cp .env.example .env               # 真实 DeepSeek 运行才需要；fixture 离线不需要
 
-```text
-.
-├── config/              # Taxonomy、标签与简报模板
-├── schemas/             # JSON Schema 数据契约
-├── src/                 # Lab 1–3 与共享工具
-├── tests/fixtures/      # 可提交的脱敏契约样例
-├── data/                # 本地数据和生成产物，默认不提交
-├── artifacts/           # 静态图、运行记录与演示材料
-├── slides/              # 最终汇报材料
-└── docs/
-    ├── course/          # 原始课程任务书
-    ├── project/         # 当前有效实施方案
-    └── research/        # 选题调研与候选方向
+bash run_pipeline.sh --fixture --offline
+streamlit run app.py               # 读取 data/output/metrics.json 等本地产物
+```
+
+公开演示聚合指标（无正文）见 [`data/output/metrics.public.json`](data/output/metrics.public.json)。合成记录级样例见 [`tests/fixtures/`](tests/fixtures/)。
+
+## 复用已有 DeepSeek 结果（可选，本地）
+
+若本地仍保留 PR6 时代的多模型 `posts_labeled` 长表，可无 API 迁移：
+
+```bash
+python -m src.lab2_analysis.classify --from-legacy path/to/legacy_posts_labeled.jsonl
+python -m src.lab3_decision.build_evidence
+python -m src.lab2_analysis.evaluate
 ```
 
 ## 重要文档
 
-- [课程实践任务书](docs/course/课程实践任务书.md)
 - [项目实施方案](docs/project/实施方案.md)
 - [数据准入与合规边界](docs/project/DATA_GATE.md)
-- [候选方向综述](docs/research/候选方向综述.md)
+- [环境检查](docs/project/environment_check.md)
+- [评估报告](docs/project/evaluation.md)
 - [协作规范](CONTRIBUTING.md)
-
-## 当前可执行步骤
-
-安装当前最小依赖：
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-成员 A、B 可各自下载并校验冻结数据；原始文本不会进入 Git：
-
-```bash
-python -m src.lab1_collection.fetch_data
-python -m src.lab1_collection.fetch_data --verify-only
-```
-
-若 huggingface.co 不可达，可通过镜像下载：
-
-```bash
-python -m src.lab1_collection.fetch_data --mirror hf-mirror.com
-```
-
-所有成员都可以只使用合成样例验证接口契约：
-
-```bash
-python -m pytest tests/test_schema.py
-```
-
-完整流水线实现后，正式交接还应通过：
-
-```bash
-bash run_pipeline.sh --fixture --offline
-```
-
-`run_pipeline.sh` 目前仍是实施契约，尚未实现。DeepSeek API 冒烟测试只允许使用 20 条合成样例；真实 HumAID 文本在团队确认数据条款和第三方处理边界前不得上传。

@@ -51,12 +51,18 @@ def _selected_model(metrics: dict, model_version: str | None = None) -> str | No
         return model_version
     if not versions:
         return None
-    # Prefer LLM then baseline when present
-    for preferred in ("deepseek", "tfidf"):
+    for preferred in ("deepseek", "tfidf", "fixture-v1"):
         for version in versions:
             if preferred in version:
                 return version
-    return versions[0]
+    per_model = metrics.get("per_model") or {}
+    return max(
+        versions,
+        key=lambda version: (
+            per_model.get(version, {}).get("coverage", 0.0),
+            per_model.get(version, {}).get("accuracy", 0.0),
+        ),
+    )
 
 
 def category_distribution(metrics: dict, output: Path) -> None:

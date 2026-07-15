@@ -3,7 +3,8 @@
 > 交付物：D04（情绪标注部分）  
 > 日期：2026-07-15  
 > 标注人数：3 人（成员 A、B、C）  
-> 样本来源：HumAID Kerala 2018 train split，分层抽样 14 条
+> 样本来源：HumAID Kerala 2018 train split，分层抽样 14 条  
+> 说明：本报告仅含聚合一致率，不含推文正文。可用 `python -m src.lab2_analysis.annotate_seed iaa` 在本地标注文件上重算并覆盖写入。
 
 ---
 

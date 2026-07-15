@@ -53,10 +53,19 @@ def select_model(metrics: dict, model_version: str | None) -> str | None:
     versions = metrics.get("model_versions") or []
     if model_version and model_version in versions:
         return model_version
-    for preferred in ("deepseek", "tfidf"):
+    for preferred in ("deepseek", "tfidf", "fixture-v1"):
         for version in versions:
             if preferred in version:
                 return version
+    per_model = metrics.get("per_model") or {}
+    if per_model:
+        return max(
+            versions,
+            key=lambda version: (
+                per_model.get(version, {}).get("coverage", 0.0),
+                per_model.get(version, {}).get("accuracy", 0.0),
+            ),
+        )
     return versions[0] if versions else None
 
 

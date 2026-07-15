@@ -160,3 +160,13 @@ class TestBriefingDynamic:
         }
         assert select_model(metrics, None) == "deepseek-v4-flash"
         assert select_model(metrics, "tfidf-lr-baseline-v1") == "tfidf-lr-baseline-v1"
+
+    def test_select_model_prefers_higher_coverage_fixture(self):
+        metrics = {
+            "model_versions": ["fixture-baseline-v1", "fixture-v1"],
+            "per_model": {
+                "fixture-baseline-v1": {"coverage": 0.15, "accuracy": 0.0},
+                "fixture-v1": {"coverage": 1.0, "accuracy": 1.0},
+            },
+        }
+        assert select_model(metrics, None) == "fixture-v1"

@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+
+      - name: Unit, schema, and privacy contract tests
+        run: python -m pytest tests/ -q
+
+      - name: Synthetic offline E2E pipeline
+        env:
+          MPLCONFIGDIR: /tmp/matplotlib
+        run: bash run_pipeline.sh --fixture --offline
+
+      - name: Privacy scan tracked tree
+        run: |
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          root = Path('.')
+          tracked = subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0')
+          banned = ('"source": "humaid_events"', '"source":"humaid_events"')
+          failures = []
+          for raw in tracked:
+              if not raw:
+                  continue
+              path = raw.decode()
+              if path.startswith('data/') and path.endswith('.jsonl'):
+                  failures.append(f'tracked data jsonl forbidden: {path}')
+                  continue
+              full = root / path
+              if not full.is_file():
+                  continue
+              try:
+                  text = full.read_text(encoding='utf-8')
+              except UnicodeDecodeError:
+                  continue
+              if path.startswith('data/') and any(b in text for b in banned):
+                  failures.append(f'real source marker in tracked data path: {path}')
+          # Ensure public metrics exist and contain no tweet bodies
+          public = root / 'data' / 'output' / 'metrics.public.json'
+          if not public.is_file():
+              failures.append('missing data/output/metrics.public.json')
+          else:
+              blob = public.read_text(encoding='utf-8')
+              if 'text_clean' in blob:
+                  failures.append('public metrics must not contain text_clean')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          print('privacy scan passed')
+          PY
