@@ -6,12 +6,16 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 METRICS_PATH = PROJECT_ROOT / "data" / "output" / "metrics.json"
 EVIDENCE_PATH = PROJECT_ROOT / "data" / "output" / "evidence.jsonl"
 BRIEFING_PATH = PROJECT_ROOT / "data" / "output" / "briefing.md"
+EVAL_PATH = PROJECT_ROOT / "docs" / "project" / "evaluation.md"
+IAA_PATH = PROJECT_ROOT / "docs" / "project" / "emotion_iaa.md"
+DQ_PATH = PROJECT_ROOT / "docs" / "project" / "data_quality.md"
+MANIFEST_PATH = PROJECT_ROOT / "data" / "frozen" / "manifest.json"
+FIGURES_DIR = PROJECT_ROOT / "artifacts" / "figures"
 
 LABEL_NAMES_CN = {
     "caution_and_advice": "警告与建议",
@@ -58,7 +62,27 @@ def load_evidence():
 
 @st.cache_data
 def load_briefing():
-    return BRIEFING_PATH.read_text(encoding="utf-8")
+    return BRIEFING_PATH.read_text(encoding="utf-8") if BRIEFING_PATH.is_file() else ""
+
+
+@st.cache_data
+def load_manifest():
+    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+
+
+@st.cache_data
+def load_data_quality():
+    return DQ_PATH.read_text(encoding="utf-8") if DQ_PATH.is_file() else ""
+
+
+@st.cache_data
+def load_evaluation():
+    return EVAL_PATH.read_text(encoding="utf-8") if EVAL_PATH.is_file() else ""
+
+
+@st.cache_data
+def load_iaa():
+    return IAA_PATH.read_text(encoding="utf-8") if IAA_PATH.is_file() else ""
 
 
 if not METRICS_PATH.is_file():
@@ -78,12 +102,16 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.header("数据范围与质量")
 
-    col1, col2, col3 = st.columns(3)
+    manifest = load_manifest()
+    dq_text = load_data_quality()
+
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("冻结记录数", metrics["total_records"])
     col2.metric("事件", "kerala_floods_2018")
     col3.metric("数据来源", "HumAID test split")
+    col4.metric("字段缺失", "time/location=null")
 
-    st.markdown("#### 数据字段")
+    st.markdown("#### 数据字段与处理说明")
     st.markdown("""
     | 字段 | 处理说明 |
     |------|----------|
@@ -92,6 +120,13 @@ with tab1:
     | `class_label` → `_lab2.reference_label` | 官方参考标签，不进入模型输入 |
     | `time` / `location` | 数据无逐帖时间地点，固定为 `null` |
     """)
+
+    st.markdown("#### 数据质量")
+    with st.expander("数据质量报告（Lab 1 产出）"):
+        if dq_text:
+            st.markdown(dq_text[:2000])
+        else:
+            st.info("`docs/project/data_quality.md` 未找到，请先运行 Lab 1")
 
     status_dist = metrics.get("evidence_status_distribution", {})
     if status_dist:
@@ -102,7 +137,7 @@ with tab1:
         })
         fig = px.bar(df, x="类型", y="数量", text_auto=True, color="类型",
                      color_discrete_sequence=["#55A868", "#4C72B0", "#C44E52"])
-        fig.update_layout(showlegend=False, height=350)
+        fig.update_layout(showlegend=False, height=300)
         st.plotly_chart(fig, width="stretch")
 
 
@@ -111,6 +146,31 @@ with tab1:
 # ============================================================
 with tab2:
     st.header("分类与评估")
+
+    st.markdown("#### 模型对比")
+    eval_text = load_evaluation()
+    model_info = {}
+    if eval_text:
+        for line in eval_text.splitlines():
+            if "Macro-F1" in line or "Weighted-F1" in line:
+                key, _, val = line.replace("*", "").partition(":")
+                key = key.strip()
+                try:
+                    model_info[key] = val.strip()
+                except Exception:
+                    pass
+
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.markdown("**TF-IDF + LR (baseline)**")
+        if model_info:
+            st.metric("Macro-F1", model_info.get("Macro-F1", "N/A"))
+            st.metric("Weighted-F1", model_info.get("Weighted-F1", "N/A"))
+        else:
+            st.info("待运行 Lab 2 evaluate")
+    with col_m2:
+        st.markdown("**LLM Few-shot (DeepSeek)**")
+        st.info("待 LLM 分类完成（需配置 .env 中的 DEEPSEEK_API_KEY）")
 
     st.markdown("#### 九类人道信息分布")
     cat_dist = metrics["category_distribution"]
@@ -139,45 +199,15 @@ with tab2:
         })
     st.dataframe(pd.DataFrame(table_data), width="stretch")
 
-    st.markdown("#### 混淆矩阵")
-    # Build confusion matrix from evidence records
-    ref_labels = LABEL_ORDER
-    pred_labels = LABEL_ORDER
-    n = len(ref_labels)
-    ref_idx = {l: i for i, l in enumerate(ref_labels)}
-    matrix = [[0] * n for _ in range(n)]
-    for rec in evidence:
-        ref = rec.get("reference_label", "")
-        pred = rec.get("predicted_label", "")
-        if ref in ref_idx and pred in ref_idx:
-            matrix[ref_idx[ref]][ref_idx[pred]] += 1
+    st.markdown("#### 混淆矩阵（Lab 2 产出）")
+    cm_path = FIGURES_DIR / "confusion_matrix_tfidf-lr-baseline-v1.png"
+    if cm_path.is_file():
+        st.image(str(cm_path), caption="Confusion Matrix (TF-IDF+LR baseline)")
+    else:
+        st.info("混淆矩阵未生成，请先运行 Lab 2 evaluate")
 
-    heatmap = go.Heatmap(
-        z=matrix,
-        x=[LABEL_NAMES_CN[l] for l in pred_labels],
-        y=[LABEL_NAMES_CN[l] for l in ref_labels],
-        colorscale="Blues", text=matrix, texttemplate="%{text}",
-        textfont={"color": "white"},
-        hovertemplate="参考: %{y}<br>预测: %{x}<br>数量: %{z}<extra></extra>",
-    )
-    fig_cm = go.Figure(heatmap)
-    fig_cm.update_layout(height=500, xaxis_title="预测", yaxis_title="参考",
-                         xaxis_tickangle=-45)
-    fig_cm.update_traces(showscale=False)
-    st.plotly_chart(fig_cm, width="stretch")
-
-    st.markdown("#### Precision / Recall / F1")
-    precs = [per_class.get(l, {}).get("precision", 0) for l in LABEL_ORDER]
-    recs = [per_class.get(l, {}).get("recall", 0) for l in LABEL_ORDER]
-    f1s = [per_class.get(l, {}).get("f1", 0) for l in LABEL_ORDER]
-    names = [LABEL_NAMES_CN[l] for l in LABEL_ORDER]
-    fig_pr = go.Figure([
-        go.Bar(name="Precision", x=names, y=precs, marker_color="#4C72B0"),
-        go.Bar(name="Recall", x=names, y=recs, marker_color="#55A868"),
-        go.Bar(name="F1", x=names, y=f1s, marker_color="#C44E52"),
-    ])
-    fig_pr.update_layout(height=400, yaxis_range=[0, 1.1], xaxis_tickangle=-45)
-    st.plotly_chart(fig_pr, width="stretch")
+    st.divider()
+    st.caption("评估报告与 `docs/project/evaluation.md` 和 `data/output/metrics.json` 一致。")
 
 
 # ============================================================
@@ -222,10 +252,10 @@ with tab4:
     st.caption("小样本探索性实验，不声称为官方 HumAID 标签，不推广为全体事件结论。")
 
     total = metrics["total_records"]
-    st.info(f"当前样本规模：{total} 条记录。情绪标签为课程成员人工标注的探索性补充。")
-
     emo_dist = metrics.get("emotion_distribution", {})
     total_emo = sum(emo_dist.values())
+    st.info(f"当前样本规模：{total} 条记录；其中含情绪标注：{total_emo} 条。情绪标签为课程成员人工标注的探索性补充。")
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -243,7 +273,6 @@ with tab4:
             fig.update_layout(showlegend=False, height=350)
             st.plotly_chart(fig, width="stretch")
 
-            # Pie chart
             pie_df = emo_df[emo_df["数量"] > 0]
             fig_pie = px.pie(pie_df, values="数量", names="情绪",
                              color_discrete_sequence=["#FF6B6B", "#FF0000", "#4ECDC4", "#45B7D1", "#96CEB4"])
@@ -283,11 +312,36 @@ with tab4:
             )
 
     st.divider()
-    st.markdown("#### 标注一致率")
-    st.caption(
-        "一致率为两人重叠标注时的一致性度量（Cohen's Kappa 或百分比一致率）。"
-        "当前 fixture 模式下无可用的双人标注数据，待 Lab 2 产出真实情绪样本后填入。"
-    )
+    st.markdown("#### 标注一致率（IAA）")
+
+    iaa_text = load_iaa()
+    if iaa_text:
+        kappa_values = []
+        for line in iaa_text.splitlines():
+            for pair in ["A ↔ B", "B ↔ C", "A ↔ C"]:
+                if pair in line and "κ" in line:
+                    try:
+                        parts = line.split("|")
+                        kappa_values.append((pair, parts[-2].strip() if len(parts) > 2 else ""))
+                    except Exception:
+                        pass
+        if kappa_values:
+            for pair, val in kappa_values:
+                try:
+                    kv = float(val)
+                    st.metric(f"Cohen's κ ({pair})", f"{kv:.2f}",
+                              delta="✅ ≥ 0.6 通过" if kv >= 0.6 else "⚠️ < 0.6")
+                except ValueError:
+                    st.caption(f"{pair}: {val}")
+        else:
+            st.info("IAA 数据未找到。请运行 Lab 2 `annotate_seed iaa`")
+        with st.expander("完整 IAA 报告"):
+            st.markdown(iaa_text)
+    else:
+        st.caption(
+            "一致率为两人重叠标注时的一致性度量（Cohen's Kappa）。"
+            "当前 IAA 报告未生成，待 Lab 2 产出 `docs/project/emotion_iaa.md` 后自动展示。"
+        )
 
     st.divider()
     st.markdown("#### 代表性差异与局限性")
@@ -299,11 +353,6 @@ with tab4:
     - **与主任务独立**：情绪分析为探索性补充，与 9 类人道信息分类分开存储、分开评估、分开报告
     """)
 
-    st.caption(
-        "本部分情绪标签为课程成员人工标注的小样本探索性实验，不声称为官方 HumAID 标签。"
-        "样本规模和标注方式决定了发现无可推广为总体事件情绪结论。"
-    )
-
 
 # ============================================================
 # Tab 5: Briefing
@@ -311,8 +360,9 @@ with tab4:
 with tab5:
     st.header("课程分析简报")
 
-    if BRIEFING_PATH.is_file():
-        st.markdown(load_briefing())
+    briefing = load_briefing()
+    if briefing:
+        st.markdown(briefing)
     else:
         st.warning(
             "简报文件未生成。运行 "

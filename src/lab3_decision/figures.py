@@ -11,7 +11,6 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -146,57 +145,10 @@ def accuracy_chart(metrics: dict, output: Path) -> None:
     print(f"figure: {output}")
 
 
-def confusion_matrix_figure(posts: list[dict], output: Path) -> None:
-    """Build and save a confusion matrix from labeled posts."""
-    labels = list(LABEL_NAMES)
-    n = len(labels)
-    label_index = {l: i for i, l in enumerate(labels)}
-    matrix = np.zeros((n, n), dtype=int)
-
-    for p in posts:
-        lab2 = p.get("_lab2")
-        if not lab2:
-            continue
-        ref = lab2.get("reference_label")
-        pred = lab2.get("predicted_label")
-        if ref in label_index and pred in label_index:
-            matrix[label_index[ref]][label_index[pred]] += 1
-
-    if matrix.sum() == 0:
-        return
-
-    names = [LABEL_NAMES[l] for l in labels]
-    fig, ax = plt.subplots(figsize=(10, 8))
-    im = ax.imshow(matrix, cmap="Blues")
-
-    ax.set_xticks(range(n))
-    ax.set_yticks(range(n))
-    ax.set_xticklabels(names, rotation=45, ha="right", fontsize=8)
-    ax.set_yticklabels(names, fontsize=8)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Reference")
-    ax.set_title("Confusion Matrix (Reference vs Predicted)")
-
-    for i in range(n):
-        for j in range(n):
-            val = matrix[i][j]
-            color = "white" if matrix[i][j] > matrix.max() / 2 else "black"
-            ax.text(j, i, str(val), ha="center", va="center", color=color, fontsize=8)
-
-    fig.colorbar(im, ax=ax, shrink=0.8)
-    fig.tight_layout()
-    fig.savefig(output, dpi=150)
-    plt.close(fig)
-    print(f"figure: {output}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metrics", type=Path,
                         default=PROJECT_ROOT / "data" / "output" / "metrics.json")
-    parser.add_argument("--input", type=Path,
-                        default=None,
-                        help="path to posts_labeled.jsonl (required for confusion matrix)")
     parser.add_argument("--output-dir", type=Path,
                         default=PROJECT_ROOT / "artifacts" / "figures")
     args = parser.parse_args()
@@ -209,15 +161,6 @@ def main() -> None:
     emotion_bar(metrics, args.output_dir / "emotion_bar.png")
     evidence_status_chart(metrics, args.output_dir / "evidence_status.png")
     accuracy_chart(metrics, args.output_dir / "accuracy_chart.png")
-
-    # Confusion matrix needs labeled posts, not just metrics
-    if args.input:
-        input_path = Path(args.input)
-        if input_path.is_file():
-            posts = [json.loads(line) for line in input_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-            confusion_matrix_figure(posts, args.output_dir / "confusion_matrix.png")
-        else:
-            print(f"confusion matrix skipped: {args.input} not found")
 
 
 if __name__ == "__main__":
