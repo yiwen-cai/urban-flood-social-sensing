@@ -269,8 +269,8 @@ with tab2:
     st.divider()
     st.markdown("#### 关键类别召回率")
     critical = [
+        ("rescue_volunteering_or_donation_effort", "救援与捐赠"),
         ("requests_or_urgent_needs", "紧急需求"),
-        ("displaced_people_and_evacuations", "流离失所与疏散"),
     ]
     for label_key, label_name in critical:
         stats = per_class.get(label_key, {})
