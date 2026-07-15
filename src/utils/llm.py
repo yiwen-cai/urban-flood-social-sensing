@@ -13,7 +13,27 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Load .env file (lightweight, no extra dependency)
+# ---------------------------------------------------------------------------
+def _load_dotenv() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.is_file():
+        return
+    with env_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            # Only set if not already in environment (env vars take precedence)
+            if key.strip() and key.strip() not in os.environ:
+                os.environ[key.strip()] = value.strip().strip("\"'")
+
+_load_dotenv()
 
 # DeepSeek is OpenAI-compatible — use the official openai package.
 try:
@@ -362,7 +382,7 @@ def classify_batch(
         if checkpoint:
             checkpoint.mark_done(post_id)
 
-        results.append(result)
+        results.append({"post_id": post_id, **result})
 
     return results
 
