@@ -32,6 +32,8 @@ data/processed/*
 !data/processed/.gitkeep
 data/analyzed/*
 !data/analyzed/.gitkeep
+!data/analyzed/posts_labeled.jsonl
+!data/analyzed/predictions.jsonl
 data/cache/*
 !data/cache/.gitkeep
 data/seed/*

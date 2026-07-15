@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Unified offline pipeline for the full dashboard.
-# Default: real legacy migration when available, else synthetic fixture.
+# Default: reuse tracked real posts+predictions when present; else legacy migrate; else fixture.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,6 +10,8 @@ MODE="auto"
 FIXTURE_MODE=0
 OFFLINE_MODE=0
 LEGACY_PATH="$ROOT/data/analyzed/posts_labeled.legacy.jsonl"
+POSTS_PATH="$ROOT/data/analyzed/posts_labeled.jsonl"
+PREDS_PATH="$ROOT/data/analyzed/predictions.jsonl"
 
 for arg in "$@"; do
   case "$arg" in
@@ -23,23 +25,34 @@ for arg in "$@"; do
   esac
 done
 
+count_nonempty_lines() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    echo 0
+    return
+  fi
+  grep -cve '^[[:space:]]*$' "$path" || true
+}
+
+POST_COUNT="$(count_nonempty_lines "$POSTS_PATH")"
+PRED_COUNT="$(count_nonempty_lines "$PREDS_PATH")"
+
 if [[ "$FIXTURE_MODE" -eq 1 ]]; then
   MODE="fixture"
+  OFFLINE_MODE=1
 elif [[ "$MODE" == "auto" ]]; then
-  if [[ -f "$LEGACY_PATH" ]]; then
+  if [[ "$POST_COUNT" -ge 1000 && "$PRED_COUNT" -ge 1000 ]]; then
+    MODE="real"
+  elif [[ -f "$LEGACY_PATH" ]]; then
     MODE="real"
   else
     MODE="fixture"
+    OFFLINE_MODE=1
   fi
 fi
 
 if [[ "$MODE" == "fixture" && "$OFFLINE_MODE" -ne 1 ]]; then
   echo "fixture mode requires --offline" >&2
-  exit 1
-fi
-
-if [[ "$MODE" == "real" && ! -f "$LEGACY_PATH" ]]; then
-  echo "real mode requires $LEGACY_PATH" >&2
   exit 1
 fi
 
@@ -55,8 +68,16 @@ echo "== unit / schema / contract tests =="
 "$PYTHON" -m pytest tests/ -q
 
 if [[ "$MODE" == "real" ]]; then
-  echo "== migrate legacy posts + predictions (no API) =="
-  "$PYTHON" -m src.lab2_analysis.classify --from-legacy "$LEGACY_PATH"
+  if [[ "$POST_COUNT" -ge 1000 && "$PRED_COUNT" -ge 1000 ]]; then
+    echo "== reuse tracked real posts + predictions (no API) =="
+    echo "posts=$POST_COUNT predictions=$PRED_COUNT"
+  elif [[ -f "$LEGACY_PATH" ]]; then
+    echo "== migrate legacy posts + predictions (no API) =="
+    "$PYTHON" -m src.lab2_analysis.classify --from-legacy "$LEGACY_PATH"
+  else
+    echo "real mode requires tracked posts/predictions or $LEGACY_PATH" >&2
+    exit 1
+  fi
 else
   echo "== stage Lab 1 fixture posts =="
   cp tests/fixtures/sample_posts.jsonl data/processed/posts_clean.fixture.jsonl

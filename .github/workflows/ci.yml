@@ -23,6 +23,11 @@ jobs:
       - name: Unit, schema, and privacy contract tests
         run: python -m pytest tests/ -q
 
+      - name: Real offline E2E pipeline (no API)
+        env:
+          MPLCONFIGDIR: /tmp/matplotlib
+        run: bash run_pipeline.sh
+
       - name: Synthetic offline E2E pipeline
         env:
           MPLCONFIGDIR: /tmp/matplotlib
@@ -35,25 +40,18 @@ jobs:
           from pathlib import Path
           root = Path('.')
           tracked = subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0')
-          banned = ('"source": "humaid_events"', '"source":"humaid_events"')
+          allowed_jsonl = {
+              'data/analyzed/posts_labeled.jsonl',
+              'data/analyzed/predictions.jsonl',
+          }
           failures = []
           for raw in tracked:
               if not raw:
                   continue
               path = raw.decode()
-              if path.startswith('data/') and path.endswith('.jsonl'):
-                  failures.append(f'tracked data jsonl forbidden: {path}')
+              if path.startswith('data/') and path.endswith('.jsonl') and path not in allowed_jsonl:
+                  failures.append(f'unexpected tracked data jsonl: {path}')
                   continue
-              full = root / path
-              if not full.is_file():
-                  continue
-              try:
-                  text = full.read_text(encoding='utf-8')
-              except UnicodeDecodeError:
-                  continue
-              if path.startswith('data/') and any(b in text for b in banned):
-                  failures.append(f'real source marker in tracked data path: {path}')
-          # Ensure public metrics exist and contain no tweet bodies
           public = root / 'data' / 'output' / 'metrics.public.json'
           if not public.is_file():
               failures.append('missing data/output/metrics.public.json')
@@ -61,6 +59,12 @@ jobs:
               blob = public.read_text(encoding='utf-8')
               if 'text_clean' in blob:
                   failures.append('public metrics must not contain text_clean')
+          # Tracked tip must still contain the real inputs even after fixture overwrite of the working tree.
+          # Verify via git show rather than the working-tree files that fixture mode replaces.
+          for rel in allowed_jsonl:
+              blob = subprocess.check_output(['git', 'show', f'HEAD:{rel}'])
+              if not blob.strip():
+                  failures.append(f'missing tracked content for {rel}')
           if failures:
               raise SystemExit('\n'.join(failures))
           print('privacy scan passed')

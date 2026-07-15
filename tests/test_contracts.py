@@ -103,6 +103,8 @@ class TrackedTreePrivacyTest(unittest.TestCase):
         for pattern in (
             "data/analyzed/*",
             "!data/analyzed/.gitkeep",
+            "!data/analyzed/posts_labeled.jsonl",
+            "!data/analyzed/predictions.jsonl",
             "data/output/*",
             "!data/output/.gitkeep",
             "data/seed/*",
@@ -114,7 +116,7 @@ class TrackedTreePrivacyTest(unittest.TestCase):
         for rel in ("data/analyzed/.gitkeep", "data/output/.gitkeep", "data/seed/.gitkeep"):
             self.assertTrue((ROOT / rel).is_file(), rel)
 
-    def test_tracked_tree_has_no_real_source_text_products(self) -> None:
+    def test_tracked_tree_allows_redacted_real_dashboard_inputs(self) -> None:
         listed = subprocess.check_output(
             ["git", "ls-files", "data/analyzed", "data/output", "data/seed"],
             cwd=ROOT,
@@ -122,29 +124,43 @@ class TrackedTreePrivacyTest(unittest.TestCase):
         ).splitlines()
         allowed = {
             "data/analyzed/.gitkeep",
+            "data/analyzed/posts_labeled.jsonl",
+            "data/analyzed/predictions.jsonl",
             "data/output/.gitkeep",
             "data/output/metrics.public.json",
             "data/seed/.gitkeep",
         }
         self.assertEqual(set(listed), allowed)
 
+        posts = _load_jsonl(ROOT / "data" / "analyzed" / "posts_labeled.jsonl")
+        preds = _load_jsonl(ROOT / "data" / "analyzed" / "predictions.jsonl")
+        post_v = _validator("post.schema.json")
+        pred_v = _validator("prediction.schema.json")
+        self.assertEqual(len(posts), 1582)
+        self.assertEqual(len(preds), 3164)
+        for row in posts:
+            post_v.validate(row)
+            self.assertEqual(row.get("source"), "humaid_events")
+            self.assertTrue(row.get("pii_redacted"))
+            self.assertIsInstance(row.get("text_clean"), str)
+            self.assertNotRegex(row["text_clean"], r"(?<!\w)@[A-Za-z0-9_]{2,}")
+        for row in preds:
+            pred_v.validate(row)
+
         tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).split(b"\0")
         tracked_paths = [p.decode("utf-8", errors="replace") for p in tracked if p]
+        allowed_jsonl = {
+            "data/analyzed/posts_labeled.jsonl",
+            "data/analyzed/predictions.jsonl",
+        }
         for path in tracked_paths:
             if path.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".mp4")):
                 continue
             full = ROOT / path
             if not full.is_file():
                 continue
-            # Skip binary-ish and lockfiles with huge content if needed
-            try:
-                text = full.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue
-            if path.startswith("data/") and any(marker in text for marker in REAL_SOURCE_MARKERS):
-                self.fail(f"tracked data path still contains real source marker: {path}")
-            if path.startswith("data/") and path.endswith(".jsonl"):
-                self.fail(f"tracked data jsonl is forbidden at tip: {path}")
+            if path.startswith("data/") and path.endswith(".jsonl") and path not in allowed_jsonl:
+                self.fail(f"unexpected tracked data jsonl at tip: {path}")
 
     def test_public_metrics_are_schema_valid_and_body_free(self) -> None:
         path = ROOT / "data" / "output" / "metrics.public.json"

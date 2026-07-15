@@ -53,11 +53,12 @@ These counts are pattern matches, not confirmed identities. They establish that 
 
 Consequences for this repository:
 
-1. Raw and processed real tweet text remain under ignored local data paths.
-2. `tests/fixtures/sample_posts.jsonl` contains only synthetic text created for contract testing.
-3. Public artifacts may contain aggregate metrics, label names, synthetic examples, code, hashes, and tweet IDs where necessary, but not original tweet text.
-4. Sending redacted text to DeepSeek remains subject to the team's course/research approval and the provider's data policy; the API smoke test must use synthetic fixture text until this boundary is confirmed.
-5. Derived publications and Slides must cite the HumAID paper and dataset source.
+1. Raw HumAID downloads remain under ignored `data/raw/` paths.
+2. **Team decision (2026-07-15 evening):** the tip tracks redacted real `data/analyzed/posts_labeled.jsonl` and `data/analyzed/predictions.jsonl` so a clean clone can rebuild the full dashboard without API calls. Texts must remain `pii_redacted: true` and free of bare `@handle` tokens.
+3. `tests/fixtures/sample_posts.jsonl` still contains synthetic text for contract testing.
+4. `data/output/metrics.public.json` remains the body-free aggregate snapshot; generated `metrics.json` / `evidence.jsonl` / `briefing.md` stay gitignored local products.
+5. Sending redacted text to DeepSeek remains subject to the team's course/research approval and the provider's data policy.
+6. Derived publications and Slides must cite the HumAID paper and dataset source. Prefer aggregate tables or synthetic examples in shareable decks; live classroom demos may show redacted tip texts.
 
 ## 6. Data distribution for three-person collaboration
 
@@ -88,7 +89,7 @@ All gate items are now checked. A full re-check covering Lab 2/3 dependencies an
 
 Consequences:
 
-1. Tracked tip must not contain real tweet bodies under `data/analyzed/`, `data/output/`, or `data/seed/` (directories keep `.gitkeep` only; `.gitignore` blocks re-adding products).
-2. Public tip may later include aggregate metrics without tweet bodies, plus synthetic record-level fixtures under `tests/fixtures/`.
+1. Tip tracks redacted real posts/predictions for clean-clone dashboard rebuild; other `data/analyzed/*` and `data/output/*` products remain gitignored except `.gitkeep` and `metrics.public.json`.
+2. Public tip also includes aggregate metrics without tweet bodies, plus synthetic fixtures under `tests/fixtures/`.
 3. Prior commits that already published real text remain reachable via Git history / clones that fetch those blobs. That residual exposure is accepted for this course release and is recorded here and in `.env.example`.
 4. A separate, explicit history-rewrite decision would be required to scrub those historical blobs.
