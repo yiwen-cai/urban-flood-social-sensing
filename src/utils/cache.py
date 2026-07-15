@@ -1,31 +1,49 @@
 """Batch cache and checkpoint/resume support for model classification runs.
 
-Caches LLM responses keyed by (model, text_hash) so that re-running the
-pipeline does not re-invoke the API for already-classified posts.  Supports
-incremental resume when a large batch is interrupted.
+Caches LLM responses keyed by (model, config_fingerprint, text_hash) so that
+re-running the pipeline does not re-invoke the API for already-classified
+posts when the prompt/few-shot/config is unchanged. Supports incremental
+resume when a large batch is interrupted — only successful IDs are
+checkpointed so failures remain retryable.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
+
+
+def config_fingerprint(payload: dict[str, Any]) -> str:
+    """Stable short hash of prompt/few-shot/config used in the cache key."""
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def is_finite_unit_interval(value: Any) -> bool:
+    """Return True iff value is a finite number in [0, 1]."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(number) and 0.0 <= number <= 1.0
 
 
 class ClassificationCache:
     """File-backed cache for model classification results.
 
     Each cache entry is stored as a JSONL line:
-        {"key": "<model>:<sha256>", "result": {...}}
+        {"key": "<model>:<config_fp>:<sha256>", "result": {...}}
 
     The in-memory dict avoids O(n²) file reads during batch processing.
+    Failed API results are never stored, so retries stay possible.
     """
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:
         if cache_dir is None:
-            from pathlib import Path as _Path
-            cache_dir = _Path(__file__).resolve().parents[2] / "data" / "cache"
+            cache_dir = Path(__file__).resolve().parents[2] / "data" / "cache"
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._loaded: dict[str, dict[str, dict[str, Any]]] = {}
@@ -34,8 +52,16 @@ class ClassificationCache:
         safe = model_version.replace("/", "_").replace(" ", "_")
         return self.cache_dir / f"classify_{safe}.jsonl"
 
-    def _make_key(self, model_version: str, text: str) -> str:
+    def _make_key(
+        self,
+        model_version: str,
+        text: str,
+        *,
+        config_fp: str = "",
+    ) -> str:
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+        if config_fp:
+            return f"{model_version}:{config_fp}:{digest}"
         return f"{model_version}:{digest}"
 
     def _ensure_loaded(self, model_version: str) -> dict[str, dict[str, Any]]:
@@ -45,7 +71,7 @@ class ClassificationCache:
         cache_path = self._cache_path(model_version)
         if not cache_path.is_file():
             self._loaded[model_version] = {}
-            return {}
+            return self._loaded[model_version]
         loaded: dict[str, dict[str, Any]] = {}
         for line in cache_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -58,16 +84,34 @@ class ClassificationCache:
         self._loaded[model_version] = loaded
         return loaded
 
-    def get(self, model_version: str, text: str) -> dict[str, Any] | None:
-        """Return cached result or None (O(1) after first load)."""
+    def get(
+        self,
+        model_version: str,
+        text: str,
+        *,
+        config_fp: str = "",
+    ) -> dict[str, Any] | None:
+        """Return cached successful result or None (O(1) after first load)."""
         loaded = self._ensure_loaded(model_version)
-        return loaded.get(self._make_key(model_version, text))
+        result = loaded.get(self._make_key(model_version, text, config_fp=config_fp))
+        if result is None:
+            return None
+        if result.get("success") is False:
+            return None
+        return result
 
     def put(
-        self, model_version: str, text: str, result: dict[str, Any]
+        self,
+        model_version: str,
+        text: str,
+        result: dict[str, Any],
+        *,
+        config_fp: str = "",
     ) -> None:
-        """Store a classification result in the cache (disk + memory)."""
-        key = self._make_key(model_version, text)
+        """Store a successful classification result (disk + memory)."""
+        if result.get("success") is False:
+            return
+        key = self._make_key(model_version, text, config_fp=config_fp)
         entry = {"key": key, "result": result}
         cache_path = self._cache_path(model_version)
         with cache_path.open("a", encoding="utf-8") as handle:
@@ -97,10 +141,9 @@ class ClassificationCache:
 
 
 class Checkpoint:
-    """Track which records have been processed in a batch run.
+    """Track which records have been successfully processed in a batch run.
 
-    Stores only the set of post_ids that have been successfully processed.
-    This allows resuming an interrupted batch without re-processing.
+    Only successful post_ids are stored so failed calls remain retryable.
     """
 
     def __init__(self, checkpoint_path: str | Path) -> None:

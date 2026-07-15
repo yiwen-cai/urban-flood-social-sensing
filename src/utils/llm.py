@@ -271,10 +271,21 @@ def classify_text(
                     "raw_response": raw,
                 }
 
+            from .cache import is_finite_unit_interval
+
+            if not is_finite_unit_interval(confidence):
+                return {
+                    "success": False,
+                    "label": None,
+                    "confidence": None,
+                    "error": f"Model returned non-finite confidence outside [0,1]: {confidence!r}",
+                    "raw_response": raw,
+                }
+
             return {
                 "success": True,
                 "label": label,
-                "confidence": float(confidence) if confidence is not None else None,
+                "confidence": float(confidence),
                 "error": None,
                 "raw_response": raw,
             }
@@ -313,6 +324,27 @@ def _is_retryable_exception(exc: Exception) -> bool:
     return any(kw in msg for kw in retryable_keywords)
 
 
+def _batch_config_fingerprint(
+    *,
+    model_name: str,
+    few_shot_examples: list[dict[str, str]] | None,
+    temperature: float = 0.0,
+) -> str:
+    from .cache import config_fingerprint
+
+    return config_fingerprint(
+        {
+            "model": model_name,
+            "temperature": temperature,
+            "system_prompt": SYSTEM_PROMPT,
+            "few_shot_template": FEW_SHOT_TEMPLATE,
+            "few_shot_examples": few_shot_examples or [],
+            "json_schema_name": CLASSIFICATION_JSON_SCHEMA["name"],
+            "timeout_seconds": DEEPSEEK_TIMEOUT,
+        }
+    )
+
+
 def classify_batch(
     texts: list[dict[str, str]],
     *,
@@ -331,6 +363,8 @@ def classify_batch(
     Returns:
         List of results with at least ``post_id``, ``label``, ``confidence``,
         ``error``, and ``model_version``.
+
+    Failures are neither cached nor checkpointed, so they remain retryable.
     """
     from .cache import ClassificationCache, Checkpoint
 
@@ -340,29 +374,31 @@ def classify_batch(
         checkpoint.load()
 
     model_name = model or DEEPSEEK_MODEL
+    config_fp = _batch_config_fingerprint(
+        model_name=model_name,
+        few_shot_examples=few_shot_examples,
+    )
     results: list[dict[str, Any]] = []
 
     for entry in texts:
         post_id = entry["post_id"]
         text_clean = entry["text_clean"]
 
-        # Skip already processed
+        # Skip already successfully processed (checkpoint = success only)
         if checkpoint and checkpoint.is_done(post_id):
-            # Try to recover from cache
-            cached = cache.get(model_name, text_clean)
+            cached = cache.get(model_name, text_clean, config_fp=config_fp)
             if cached:
                 results.append({"post_id": post_id, **cached})
                 continue
+            # Checkpoint without matching cache: treat as incomplete and retry
 
-        # Check cache first
-        cached = cache.get(model_name, text_clean)
+        cached = cache.get(model_name, text_clean, config_fp=config_fp)
         if cached:
             results.append({"post_id": post_id, **cached})
-            if checkpoint:
+            if checkpoint and not checkpoint.is_done(post_id):
                 checkpoint.mark_done(post_id)
             continue
 
-        # Call API
         api_result = classify_text(
             text_clean,
             few_shot_examples=few_shot_examples,
@@ -375,12 +411,13 @@ def classify_batch(
             "success": api_result["success"],
             "error": api_result.get("error"),
             "model_version": model_name,
+            "config_fingerprint": config_fp,
         }
 
-        # Cache and checkpoint (even failures, so we don't retry forever)
-        cache.put(model_name, text_clean, result)
-        if checkpoint:
-            checkpoint.mark_done(post_id)
+        if api_result["success"]:
+            cache.put(model_name, text_clean, result, config_fp=config_fp)
+            if checkpoint:
+                checkpoint.mark_done(post_id)
 
         results.append({"post_id": post_id, **result})
 

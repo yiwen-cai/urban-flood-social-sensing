@@ -1,7 +1,8 @@
 """Lab 2 — Classification pipeline: baseline + LLM Few-shot.
 
-Produces ``data/analyzed/posts_labeled.jsonl`` by reading Lab 1's
-``posts_clean.jsonl`` and appending ``_lab2`` annotations.
+Produces:
+- ``data/analyzed/posts_labeled.jsonl`` — one row per post (labels/emotion only)
+- ``data/analyzed/predictions.jsonl`` — one row per (post_id, model_version)
 
 Two classifiers:
 1. **TF-IDF + Logistic Regression** — low-complexity, fully reproducible baseline.
@@ -9,8 +10,8 @@ Two classifiers:
 
 Usage:
     python -m src.lab2_analysis.classify --input data/processed/posts_clean.test.jsonl
-    python -m src.lab2_analysis.classify --input data/processed/posts_clean.test.jsonl --method baseline
-    python -m src.lab2_analysis.classify --input data/processed/posts_clean.test.jsonl --method llm
+    python -m src.lab2_analysis.classify --method baseline --merge-reference
+    python -m src.lab2_analysis.classify --from-legacy data/analyzed/posts_labeled.legacy.jsonl
 """
 
 from __future__ import annotations
@@ -18,25 +19,20 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Project paths
-# ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = PROJECT_ROOT / "data" / "processed" / "posts_clean.test.jsonl"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "analyzed" / "posts_labeled.jsonl"
+DEFAULT_PREDICTIONS = PROJECT_ROOT / "data" / "analyzed" / "predictions.jsonl"
 DEFAULT_ERRORS = PROJECT_ROOT / "data" / "analyzed" / "classification_errors.jsonl"
 TRAIN_PATH = PROJECT_ROOT / "data" / "raw" / "humaid" / "kerala_floods_2018" / "train.json"
 DEV_PATH = PROJECT_ROOT / "data" / "raw" / "humaid" / "kerala_floods_2018" / "dev.json"
 FEW_SHOT_PATH = PROJECT_ROOT / "data" / "seed" / "few_shot_examples.jsonl"
-
-# ====================================================================
-# Label inventory
-# ====================================================================
 
 ALL_LABELS: list[str] = [
     "caution_and_advice",
@@ -50,16 +46,11 @@ ALL_LABELS: list[str] = [
     "sympathy_and_support",
 ]
 
+BASELINE_MODEL_VERSION = "tfidf-lr-baseline-v1"
 
-# ====================================================================
-# Baseline: TF-IDF + Logistic Regression
-# ====================================================================
 
 class BaselineClassifier:
-    """Reproducible TF-IDF + Logistic Regression baseline.
-
-    Trained on HumAID train split, optionally tuned on dev split.
-    """
+    """Reproducible TF-IDF + Logistic Regression baseline."""
 
     def __init__(self, *, max_features: int = 5000, C: float = 1.0):
         self.max_features = max_features
@@ -69,10 +60,7 @@ class BaselineClassifier:
         self._label_to_idx: dict[str, int] = {}
         self._idx_to_label: dict[int, str] = {}
 
-    def train(
-        self, texts: list[str], labels: list[str]
-    ) -> BaselineClassifier:
-        """Fit vectorizer and classifier on training data."""
+    def train(self, texts: list[str], labels: list[str]) -> BaselineClassifier:
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.linear_model import LogisticRegression
 
@@ -84,10 +72,8 @@ class BaselineClassifier:
             ngram_range=(1, 2),
             stop_words="english",
         )
-
         X = self._vectorizer.fit_transform(texts)
         y = np.array([self._label_to_idx[lbl] for lbl in labels])
-
         self._model = LogisticRegression(
             C=self.C,
             max_iter=1000,
@@ -98,31 +84,25 @@ class BaselineClassifier:
         return self
 
     def predict(self, texts: list[str]) -> list[dict[str, Any]]:
-        """Return list of {label, scores} dicts for each text."""
         if self._vectorizer is None or self._model is None:
             raise RuntimeError("Classifier not trained. Call .train() first.")
-
         X = self._vectorizer.transform(texts)
         proba = self._model.predict_proba(X)
         pred_indices = self._model.predict(X)
-
         results: list[dict[str, Any]] = []
         for i, idx in enumerate(pred_indices):
             label = self._idx_to_label[idx]
-            scores: dict[str, float] = {}
-            for j, lbl in self._idx_to_label.items():
-                scores[lbl] = float(proba[i, j])
+            scores = {
+                self._idx_to_label[j]: float(proba[i, j])
+                for j in self._idx_to_label
+            }
             results.append({"label": label, "scores": scores})
         return results
 
 
 def _load_humaid_split(path: Path) -> tuple[list[str], list[str]]:
-    """Load a HumAID JSON file and return (redacted texts, labels).
-
-    Applies redact_text so that the TF-IDF vocabulary matches the redacted
-    text_clean field produced by Lab 1's standardize.py during inference.
-    """
     from src.utils.redact import redact_text
+
     with path.open(encoding="utf-8") as handle:
         rows = json.load(handle)
     texts = [redact_text(r["tweet_text"]) for r in rows]
@@ -131,46 +111,23 @@ def _load_humaid_split(path: Path) -> tuple[list[str], list[str]]:
 
 
 def train_baseline() -> BaselineClassifier:
-    """Train a baseline classifier on the official train split.
-
-    Text is redacted (via _load_humaid_split) so the TF-IDF vocabulary
-    matches the redacted text_clean used during inference. Dev split is
-    reserved for few-shot example selection; hyperparameter tuning on dev
-    is deferred (C=1.0 is a reasonable default for a course baseline).
-    """
     train_texts, train_labels = _load_humaid_split(TRAIN_PATH)
     clf = BaselineClassifier(max_features=5000, C=1.0)
     clf.train(train_texts, train_labels)
     return clf
 
 
-# ====================================================================
-# Few-shot example selection
-# ====================================================================
-
 def select_few_shot_examples(
     *, samples_per_class: int = 2, random_seed: int = 42
 ) -> list[dict[str, str]]:
-    """Select few-shot examples from train+dev, NOT from test.
-
-    Args:
-        samples_per_class: Number of examples per label.
-        random_seed: Fixed seed for reproducibility.
-
-    Returns:
-        List of {"text": ..., "label": ...} dicts, frozen for Prompt use.
-    """
     import random
     from src.utils.redact import redact_text
 
     random.seed(random_seed)
-
-    # Pool from train and dev only — NEVER from test
     train_rows = json.loads(TRAIN_PATH.read_text(encoding="utf-8"))
     dev_rows = json.loads(DEV_PATH.read_text(encoding="utf-8"))
     pool = train_rows + dev_rows
 
-    # Group by label
     by_label: dict[str, list[str]] = {lbl: [] for lbl in ALL_LABELS}
     for row in pool:
         label = row["class_label"]
@@ -180,12 +137,9 @@ def select_few_shot_examples(
     examples: list[dict[str, str]] = []
     for label in ALL_LABELS:
         candidates = by_label.get(label, [])
-        selected = random.sample(
-            candidates, min(samples_per_class, len(candidates))
-        )
+        selected = random.sample(candidates, min(samples_per_class, len(candidates)))
         for text in selected:
             examples.append({"text": redact_text(text), "label": label})
-
     random.shuffle(examples)
     return examples
 
@@ -193,7 +147,6 @@ def select_few_shot_examples(
 def save_few_shot_examples(
     examples: list[dict[str, str]], path: str | Path | None = None
 ) -> Path:
-    """Persist selected few-shot examples to JSONL."""
     path = Path(path or FEW_SHOT_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -203,7 +156,6 @@ def save_few_shot_examples(
 
 
 def load_few_shot_examples(path: str | Path | None = None) -> list[dict[str, str]]:
-    """Load frozen few-shot examples from JSONL."""
     path = Path(path or FEW_SHOT_PATH)
     if not path.is_file():
         raise FileNotFoundError(
@@ -217,20 +169,108 @@ def load_few_shot_examples(path: str | Path | None = None) -> list[dict[str, str
     ]
 
 
-# ====================================================================
-# Main classification runner
-# ====================================================================
+def _post_lab2(
+    *,
+    reference_label: str | None = None,
+    exploratory_emotion: str | None = None,
+    evidence_status: str = "dataset_record",
+) -> dict[str, Any]:
+    return {
+        "reference_label": reference_label,
+        "exploratory_emotion": exploratory_emotion,
+        "evidence_status": evidence_status,
+    }
+
+
+def make_prediction_row(
+    *,
+    post_id: str,
+    model_version: str,
+    predicted_label: str | None,
+    model_scores: dict[str, float],
+    status: str,
+    pipeline_run_id: str,
+    error_message: str | None = None,
+    confidence: float | None = None,
+) -> dict[str, Any]:
+    if confidence is None and predicted_label and predicted_label in model_scores:
+        confidence = float(model_scores[predicted_label])
+    return {
+        "schema_version": "1.0.0",
+        "pipeline_run_id": pipeline_run_id,
+        "post_id": post_id,
+        "model_version": model_version,
+        "predicted_label": predicted_label,
+        "model_scores": model_scores,
+        "status": status,
+        "error_message": error_message,
+        "confidence": confidence,
+    }
+
+
+def build_unique_posts(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return one post row per post_id with post-level _lab2 only."""
+    posts: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        post_id = record["post_id"]
+        if post_id in seen:
+            continue
+        seen.add(post_id)
+        post = {k: v for k, v in record.items() if k != "_lab2"}
+        source = post.get("source", "humaid_events")
+        evidence_status = (
+            "human_labeled" if source == "synthetic_fixture" else "dataset_record"
+        )
+        post["_lab2"] = _post_lab2(evidence_status=evidence_status)
+        if post.get("_lab3") is None and "_lab3" not in post:
+            post["_lab3"] = None
+        posts.append(post)
+    return posts
+
+
+def write_jsonl_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        delete=False,
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    ) as tmp:
+        for row in rows:
+            tmp.write(json.dumps(row, ensure_ascii=False) + "\n")
+        tmp_path = Path(tmp.name)
+    tmp_path.replace(path)
+
+
+def upsert_predictions(
+    path: Path,
+    new_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace any existing (post_id, model_version) rows, then rewrite atomically."""
+    existing: dict[tuple[str, str], dict[str, Any]] = {}
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            existing[(row["post_id"], row["model_version"])] = row
+    for row in new_rows:
+        existing[(row["post_id"], row["model_version"])] = row
+    merged = list(existing.values())
+    write_jsonl_atomic(path, merged)
+    return merged
+
 
 def run_baseline_classification(
     input_path: str | Path,
     clf: BaselineClassifier | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Classify all posts in ``input_path`` using the TF-IDF baseline.
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Classify posts with the TF-IDF baseline.
 
-    Returns:
-        (annotated_records, error_records) — error_records is empty for
-        the baseline (deterministic local inference), but kept for
-        interface consistency.
+    Returns (posts, predictions, errors).
     """
     from src.utils.io import read_jsonl
 
@@ -239,21 +279,23 @@ def run_baseline_classification(
 
     records = list(read_jsonl(input_path))
     texts = [r["text_clean"] for r in records]
-    predictions = clf.predict(texts)
-
-    annotated: list[dict[str, Any]] = []
-    for record, pred in zip(records, predictions):
-        record["_lab2"] = {
-            "reference_label": None,  # Lab 1 doesn't carry this
-            "predicted_label": pred["label"],
-            "model_scores": pred["scores"],
-            "exploratory_emotion": None,
-            "evidence_status": "model_prediction",
-            "model_version": "tfidf-lr-baseline-v1",
-        }
-        annotated.append(record)
-
-    return annotated, []
+    preds = clf.predict(texts)
+    posts = build_unique_posts(records)
+    predictions: list[dict[str, Any]] = []
+    for record, pred in zip(records, preds):
+        confidence = float(pred["scores"].get(pred["label"], 0.0))
+        predictions.append(
+            make_prediction_row(
+                post_id=record["post_id"],
+                model_version=BASELINE_MODEL_VERSION,
+                predicted_label=pred["label"],
+                model_scores={k: float(v) for k, v in pred["scores"].items()},
+                status="ok",
+                pipeline_run_id=record.get("pipeline_run_id", "lab2-baseline"),
+                confidence=confidence,
+            )
+        )
+    return posts, predictions, []
 
 
 def run_llm_classification(
@@ -261,19 +303,10 @@ def run_llm_classification(
     *,
     few_shot_examples: list[dict[str, str]] | None = None,
     checkpoint_path: str | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Classify all posts using the DeepSeek LLM with few-shot prompting.
-
-    Args:
-        input_path: Path to posts_clean.jsonl.
-        few_shot_examples: Few-shot examples (auto-loaded if None).
-        checkpoint_path: Path for resume checkpoint file.
-
-    Returns:
-        (annotated_records, error_records)
-    """
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Classify posts with DeepSeek. Returns (posts, predictions, errors)."""
     from src.utils.io import read_jsonl
-    from src.utils.llm import classify_batch, DEEPSEEK_MODEL
+    from src.utils.llm import DEEPSEEK_MODEL, classify_batch
 
     if few_shot_examples is None:
         few_shot_examples = load_few_shot_examples()
@@ -283,218 +316,252 @@ def run_llm_classification(
         {"post_id": r["post_id"], "text_clean": r["text_clean"]}
         for r in records
     ]
-
-    # Checkpoint defaults
     if checkpoint_path is None:
-        checkpoint_path = str(
-            PROJECT_ROOT / "data" / "cache" / "checkpoint_llm.txt"
-        )
+        checkpoint_path = str(PROJECT_ROOT / "data" / "cache" / "checkpoint_llm.txt")
 
     batch_results = classify_batch(
         texts,
         few_shot_examples=few_shot_examples,
         checkpoint_path=checkpoint_path,
     )
-
-    # Map batch results back to records
     result_by_id = {r["post_id"]: r for r in batch_results}
-
-    annotated: list[dict[str, Any]] = []
+    posts = build_unique_posts(records)
+    predictions: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
 
     for record in records:
         post_id = record["post_id"]
         br = result_by_id.get(post_id, {})
-
+        model_version = br.get("model_version", DEEPSEEK_MODEL)
         if br.get("success"):
             label = br["label"]
-            raw_conf = br.get("confidence")
-            confidence = float(raw_conf) if raw_conf is not None else 1.0
-            scores = {label: confidence} if label else {}
-            record["_lab2"] = {
-                "reference_label": None,
-                "predicted_label": label,
-                "model_scores": scores,
-                "exploratory_emotion": None,
-                "evidence_status": "model_prediction",
-                "model_version": br.get("model_version", DEEPSEEK_MODEL),
-            }
-            annotated.append(record)
+            confidence = float(br["confidence"])
+            scores = {label: confidence}
+            predictions.append(
+                make_prediction_row(
+                    post_id=post_id,
+                    model_version=model_version,
+                    predicted_label=label,
+                    model_scores=scores,
+                    status="ok",
+                    pipeline_run_id=record.get("pipeline_run_id", "lab2-llm"),
+                    confidence=confidence,
+                )
+            )
         else:
-            # Classification failed — record error and set predicted_label to None
-            record["_lab2"] = {
-                "reference_label": None,
-                "predicted_label": None,
-                "model_scores": {},
-                "exploratory_emotion": None,
-                "evidence_status": "model_prediction",
-                "model_version": br.get("model_version", DEEPSEEK_MODEL),
-            }
-            annotated.append(record)
-            errors.append({
-                "post_id": post_id,
-                "error": br.get("error", "unknown"),
-                "source_ref": record.get("source_ref", ""),
-            })
-
-    return annotated, errors
+            err = br.get("error", "unknown")
+            predictions.append(
+                make_prediction_row(
+                    post_id=post_id,
+                    model_version=model_version,
+                    predicted_label=None,
+                    model_scores={},
+                    status="error",
+                    pipeline_run_id=record.get("pipeline_run_id", "lab2-llm"),
+                    error_message=str(err),
+                    confidence=None,
+                )
+            )
+            errors.append(
+                {
+                    "post_id": post_id,
+                    "model_version": model_version,
+                    "error": err,
+                    "source_ref": record.get("source_ref", ""),
+                }
+            )
+    return posts, predictions, errors
 
 
 def merge_reference_labels(
-    records: list[dict[str, Any]],
+    posts: list[dict[str, Any]],
     test_path: str | Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Merge official reference labels from HumAID test.json into _lab2.
-
-    This is called AFTER classification so that reference labels are only
-    used for evaluation and never leak into the model input.
-
-    Lab 1's ``post_id`` format is ``{split}:{tweet_id}`` (e.g.
-    ``"test:1032436206313725953"``), so we strip the split prefix before
-    looking up the raw tweet_id in HumAID's reference labels.
-    """
+    """Merge official HumAID test labels into unique post rows."""
     test_path = Path(
         test_path
         or PROJECT_ROOT / "data" / "raw" / "humaid" / "kerala_floods_2018" / "test.json"
     )
     with test_path.open(encoding="utf-8") as handle:
         test_rows = json.load(handle)
-
     ref_by_id = {str(r["tweet_id"]): r["class_label"] for r in test_rows}
 
     matched = 0
-    for record in records:
-        post_id = record.get("post_id", "")
-        # Strip the split prefix added by Lab 1 (e.g. "test:123" → "123")
+    for post in posts:
+        post_id = post.get("post_id", "")
         tweet_id = post_id.split(":", 1)[-1] if ":" in post_id else post_id
-
         ref_label = ref_by_id.get(tweet_id)
-        if ref_label is not None and "_lab2" in record:
-            record["_lab2"]["reference_label"] = ref_label
-            record["_lab2"]["evidence_status"] = "dataset_record"
-            matched += 1
+        if ref_label is None:
+            continue
+        lab2 = post.setdefault("_lab2", _post_lab2())
+        lab2["reference_label"] = ref_label
+        lab2["evidence_status"] = "dataset_record"
+        matched += 1
+    print(f"Merged {matched} reference labels into {len(posts)} posts")
+    return posts
 
-    print(f"Merged {matched} reference labels into {len(records)} records")
-    return records
 
+def migrate_legacy_labeled(
+    legacy_path: str | Path,
+    *,
+    posts_out: str | Path = DEFAULT_OUTPUT,
+    predictions_out: str | Path = DEFAULT_PREDICTIONS,
+) -> tuple[int, int]:
+    """Split legacy multi-model posts_labeled rows into posts + predictions.
 
-# ====================================================================
-# CLI
-# ====================================================================
+    Reuses prior DeepSeek/baseline results without calling any API.
+    """
+    legacy_path = Path(legacy_path)
+    rows = [
+        json.loads(line)
+        for line in legacy_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    posts_by_id: dict[str, dict[str, Any]] = {}
+    predictions: list[dict[str, Any]] = []
+    for row in rows:
+        post_id = row["post_id"]
+        lab2 = row.get("_lab2") or {}
+        if post_id not in posts_by_id:
+            post = {k: v for k, v in row.items() if k != "_lab2"}
+            post["_lab2"] = _post_lab2(
+                reference_label=lab2.get("reference_label"),
+                exploratory_emotion=lab2.get("exploratory_emotion"),
+                evidence_status=(
+                    "dataset_record"
+                    if lab2.get("evidence_status") in (None, "dataset_record", "model_prediction")
+                    else lab2.get("evidence_status", "dataset_record")
+                ),
+            )
+            if post["_lab2"]["evidence_status"] not in ("dataset_record", "human_labeled"):
+                post["_lab2"]["evidence_status"] = "dataset_record"
+            posts_by_id[post_id] = post
+        else:
+            existing = posts_by_id[post_id]["_lab2"]
+            if existing.get("reference_label") is None and lab2.get("reference_label"):
+                existing["reference_label"] = lab2["reference_label"]
+            if existing.get("exploratory_emotion") is None and lab2.get("exploratory_emotion"):
+                existing["exploratory_emotion"] = lab2["exploratory_emotion"]
+
+        model_version = lab2.get("model_version")
+        if not model_version:
+            continue
+        pred_label = lab2.get("predicted_label")
+        scores = {k: float(v) for k, v in (lab2.get("model_scores") or {}).items()}
+        status = "ok" if pred_label else "error"
+        predictions.append(
+            make_prediction_row(
+                post_id=post_id,
+                model_version=model_version,
+                predicted_label=pred_label,
+                model_scores=scores,
+                status=status,
+                pipeline_run_id=row.get("pipeline_run_id", "legacy-migrate"),
+                error_message=None if status == "ok" else "legacy missing prediction",
+                confidence=float(scores[pred_label]) if pred_label and pred_label in scores else None,
+            )
+        )
+
+    # Deduplicate predictions by (post_id, model_version), last wins
+    pred_map = {(p["post_id"], p["model_version"]): p for p in predictions}
+    posts = list(posts_by_id.values())
+    write_jsonl_atomic(Path(posts_out), posts)
+    write_jsonl_atomic(Path(predictions_out), list(pred_map.values()))
+    return len(posts), len(pred_map)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--input",
-        type=Path,
-        default=DEFAULT_INPUT,
-        help="Path to posts_clean.jsonl (Lab 1 output)",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=DEFAULT_OUTPUT,
-        help="Path for posts_labeled.jsonl",
-    )
-    parser.add_argument(
-        "--errors",
-        type=Path,
-        default=DEFAULT_ERRORS,
-        help="Path for classification_errors.jsonl",
-    )
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--predictions", type=Path, default=DEFAULT_PREDICTIONS)
+    parser.add_argument("--errors", type=Path, default=DEFAULT_ERRORS)
     parser.add_argument(
         "--method",
         choices=["baseline", "llm", "both"],
         default="both",
-        help="Which classifier to run (default: both)",
     )
+    parser.add_argument("--merge-reference", action="store_true")
+    parser.add_argument("--select-few-shot", action="store_true")
     parser.add_argument(
-        "--merge-reference",
-        action="store_true",
-        help="Merge official reference labels after classification",
-    )
-    parser.add_argument(
-        "--select-few-shot",
-        action="store_true",
-        help="Select and save few-shot examples, then exit",
+        "--from-legacy",
+        type=Path,
+        default=None,
+        help="Migrate a legacy multi-model posts_labeled.jsonl without API calls",
     )
     args = parser.parse_args()
 
-    # Few-shot selection mode
     if args.select_few_shot:
         examples = select_few_shot_examples(samples_per_class=2)
         saved = save_few_shot_examples(examples)
         print(f"Saved {len(examples)} few-shot examples to {saved}")
         return 0
 
-    from src.utils.io import write_jsonl
+    if args.from_legacy is not None:
+        n_posts, n_preds = migrate_legacy_labeled(
+            args.from_legacy,
+            posts_out=args.output,
+            predictions_out=args.predictions,
+        )
+        print(
+            f"Migrated legacy file → {n_posts} posts, {n_preds} predictions "
+            f"({args.output}, {args.predictions})"
+        )
+        return 0
 
     if not Path(args.input).is_file():
         print(f"Input file not found: {args.input}", file=sys.stderr)
-        print(
-            "Run Lab 1 first to produce posts_clean.jsonl, or use --input to "
-            "point to a fixture file.",
-            file=sys.stderr,
-        )
         return 1
 
-    all_annotated: list[dict[str, Any]] = []
+    posts: list[dict[str, Any]] | None = None
+    all_predictions: list[dict[str, Any]] = []
     all_errors: list[dict[str, Any]] = []
 
-    # --- Baseline ---
     if args.method in ("baseline", "both"):
         print("Training TF-IDF + Logistic Regression baseline...")
-        annotated, _ = run_baseline_classification(args.input)
-        if args.method == "baseline":
-            all_annotated = annotated
-            print(f"  Baseline classified {len(annotated)} records")
-        else:
-            # both mode: keep a copy of the baseline result for side-by-side eval
-            bl_path = args.output.with_suffix(".baseline.jsonl")
-            if args.merge_reference:
-                annotated = merge_reference_labels(annotated)
-            write_jsonl(bl_path, annotated)
-            print(f"  Baseline classified {len(annotated)} records → {bl_path}")
+        posts, predictions, _ = run_baseline_classification(args.input)
+        all_predictions.extend(predictions)
+        print(f"  Baseline produced {len(predictions)} predictions")
 
-    # --- LLM ---
     if args.method in ("llm", "both"):
         print("Running LLM classification (DeepSeek)...")
-        annotated, errors = run_llm_classification(args.input)
-        all_annotated = annotated
-        all_errors = errors
-        print(f"  LLM classified {len(annotated)} records, {len(errors)} errors")
+        llm_posts, predictions, errors = run_llm_classification(args.input)
+        if posts is None:
+            posts = llm_posts
+        all_predictions.extend(predictions)
+        all_errors.extend(errors)
+        print(f"  LLM produced {len(predictions)} predictions, {len(errors)} errors")
 
-    # --- Merge reference labels ---
-    if args.merge_reference and all_annotated:
-        all_annotated = merge_reference_labels(all_annotated)
-    elif all_annotated and not args.merge_reference:
+    assert posts is not None
+
+    if args.merge_reference:
+        posts = merge_reference_labels(posts)
+    else:
         print(
-            "Note: --merge-reference not set. reference_label will be null "
-            "in the output, and evaluate.py will produce empty metrics. "
-            "Add --merge-reference to include official reference labels.",
+            "Note: --merge-reference not set. reference_label will be null.",
             file=sys.stderr,
         )
 
-    # --- Write outputs ---
-    if all_annotated:
-        write_jsonl(Path(args.output), all_annotated)
-        print(f"Wrote {len(all_annotated)} records to {args.output}")
+    write_jsonl_atomic(Path(args.output), posts)
+    upsert_predictions(Path(args.predictions), all_predictions)
+    # Errors are rebuilt atomically every run (never append-only).
+    write_jsonl_atomic(Path(args.errors), all_errors)
 
-    if all_errors:
-        write_jsonl(Path(args.errors), all_errors)
-        print(f"Wrote {len(all_errors)} error records to {args.errors}")
+    print(f"Wrote {len(posts)} unique posts to {args.output}")
+    print(f"Wrote predictions to {args.predictions}")
+    print(f"Wrote {len(all_errors)} error records to {args.errors}")
 
-    # --- Accounting ---
-    input_count = sum(
-        1 for _ in Path(args.input).read_text(encoding="utf-8").splitlines()
-        if _.strip()
-    )
-    success_count = len(all_annotated) - len(all_errors)
+    pred_keys = [(p["post_id"], p["model_version"]) for p in all_predictions]
+    if len(pred_keys) != len(set(pred_keys)):
+        print("ERROR: duplicate (post_id, model_version) in this run", file=sys.stderr)
+        return 1
+
+    success = sum(1 for p in all_predictions if p["status"] == "ok")
     print(
-        f"Accounting: {input_count} input, {success_count} success, "
-        f"{len(all_errors)} failed, {input_count - len(all_annotated)} skipped"
+        f"Accounting: {len(posts)} posts, {len(all_predictions)} predictions, "
+        f"{success} ok, {len(all_errors)} failed"
     )
-    return 0 if len(all_errors) == 0 else 1
+    return 0 if not all_errors else 1
 
 
 if __name__ == "__main__":

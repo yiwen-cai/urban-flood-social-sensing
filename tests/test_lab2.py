@@ -167,7 +167,11 @@ class TestClassificationCache:
         return ClassificationCache(tmp_path / "cache")
 
     def test_put_and_get(self, cache):
-        cache.put("test-model", "hello world", {"label": "caution_and_advice", "confidence": 0.95})
+        cache.put(
+            "test-model",
+            "hello world",
+            {"success": True, "label": "caution_and_advice", "confidence": 0.95},
+        )
         result = cache.get("test-model", "hello world")
         assert result is not None
         assert result["label"] == "caution_and_advice"
@@ -177,44 +181,52 @@ class TestClassificationCache:
 
     def test_same_text_same_key(self, cache):
         """Identical text + model produce identical cache key."""
-        cache.put("m", "flood", {"x": 1})
-        assert cache.get("m", "flood") == {"x": 1}
+        cache.put("m", "flood", {"success": True, "x": 1})
+        assert cache.get("m", "flood") == {"success": True, "x": 1}
 
     def test_different_models_separate(self, cache):
-        cache.put("baseline", "flood", {"label": "A"})
-        cache.put("llm", "flood", {"label": "B"})
+        cache.put("baseline", "flood", {"success": True, "label": "A"})
+        cache.put("llm", "flood", {"success": True, "label": "B"})
         assert cache.get("baseline", "flood")["label"] == "A"
         assert cache.get("llm", "flood")["label"] == "B"
 
+    def test_config_fingerprint_invalidates_cache(self, cache):
+        cache.put("m", "flood", {"success": True, "label": "A"}, config_fp="fp1")
+        assert cache.get("m", "flood", config_fp="fp1")["label"] == "A"
+        assert cache.get("m", "flood", config_fp="fp2") is None
+
+    def test_failures_are_not_cached(self, cache):
+        cache.put("m", "flood", {"success": False, "error": "timeout"})
+        assert cache.get("m", "flood") is None
+        assert cache.load_all("m") == {}
+
     def test_load_all(self, cache):
-        cache.put("m", "a", {"x": 1})
-        cache.put("m", "b", {"x": 2})
+        cache.put("m", "a", {"success": True, "x": 1})
+        cache.put("m", "b", {"success": True, "x": 2})
         all_entries = cache.load_all("m")
         assert len(all_entries) == 2
 
     def test_stats(self, cache):
         cache.put("m", "a", {"success": True, "label": "X"})
-        cache.put("m", "b", {"success": False, "label": None})
+        cache.put("m", "b", {"success": True, "label": "Y"})
         s = cache.stats("m")
         assert s["cached_entries"] == 2
-        assert s["success_count"] == 1
-        assert s["error_count"] == 1
+        assert s["success_count"] == 2
 
     def test_put_updates_memory(self, cache):
         """After put, get must return from memory without re-reading file."""
-        cache.put("m", "text", {"label": "X"})
-        # should hit memory, not re-read file
+        cache.put("m", "text", {"success": True, "label": "X"})
         result = cache.get("m", "text")
-        assert result == {"label": "X"}
+        assert result == {"success": True, "label": "X"}
 
     def test_persistence_across_instances(self, tmp_path):
         """Cache entries survive re-instantiation (disk-backed)."""
         d = tmp_path / "cache2"
         c1 = ClassificationCache(d)
-        c1.put("m", "text", {"label": "X"})
+        c1.put("m", "text", {"success": True, "label": "X"})
 
         c2 = ClassificationCache(d)
-        assert c2.get("m", "text") == {"label": "X"}
+        assert c2.get("m", "text") == {"success": True, "label": "X"}
 
 
 class TestCheckpoint:
@@ -249,6 +261,14 @@ class TestCheckpoint:
         cp2 = Checkpoint(cp_path)
         assert cp2.load() == {"x"}
         assert cp2.is_done("x")
+
+    def test_failures_are_not_marked_done_by_convention(self, cp_path):
+        """Checkpoint only stores successes; failures remain retryable."""
+        cp = Checkpoint(cp_path)
+        # Simulate success-only marking used by classify_batch
+        cp.mark_done("ok-1")
+        assert cp.is_done("ok-1")
+        assert not cp.is_done("failed-1")
 
 
 # ====================================================================
@@ -304,6 +324,13 @@ from src.lab2_analysis.classify import (
     load_few_shot_examples,
     merge_reference_labels,
     ALL_LABELS,
+    TRAIN_PATH,
+    DEV_PATH,
+)
+
+requires_humaid_raw = pytest.mark.skipif(
+    not TRAIN_PATH.is_file() or not DEV_PATH.is_file(),
+    reason="HumAID raw train/dev JSON not present locally",
 )
 
 
@@ -349,6 +376,7 @@ class TestBaselineClassifier:
         with pytest.raises(RuntimeError, match="not trained"):
             clf.predict(["some text"])
 
+    @requires_humaid_raw
     def test_train_on_full_data(self):
         """Sanity: train on real HumAID train split."""
         clf = train_baseline()
@@ -359,18 +387,21 @@ class TestBaselineClassifier:
 
 
 class TestFewShotExamples:
+    @requires_humaid_raw
     def test_select_covers_all_nine_labels(self, tmp_path):
         examples = select_few_shot_examples(samples_per_class=2, random_seed=42)
         labels = {e["label"] for e in examples}
         assert labels == set(ALL_LABELS)
         assert len(examples) == 18
 
+    @requires_humaid_raw
     def test_examples_are_redacted(self):
         """Regression: few-shot text must be redacted (DATA_GATE compliance)."""
         examples = select_few_shot_examples(samples_per_class=2, random_seed=42)
         for ex in examples:
             assert "@" not in ex["text"] or "[USER]" in ex["text"]
 
+    @requires_humaid_raw
     def test_save_and_load_roundtrip(self, tmp_path):
         examples = select_few_shot_examples(samples_per_class=2, random_seed=42)
         path = tmp_path / "few_shot_test.jsonl"
@@ -399,9 +430,9 @@ class TestMergeReferenceLabels:
         records = [{
             "post_id": "test:1032436206313725953",
             "_lab2": {
-                "reference_label": None, "predicted_label": "other_relevant_information",
-                "model_scores": {}, "exploratory_emotion": None,
-                "evidence_status": "model_prediction", "model_version": "v1",
+                "reference_label": None,
+                "exploratory_emotion": None,
+                "evidence_status": "dataset_record",
             },
         }]
         merged = merge_reference_labels(records, test_path=Path(p))
@@ -416,9 +447,9 @@ class TestMergeReferenceLabels:
         records = [{
             "post_id": "123",
             "_lab2": {
-                "reference_label": None, "predicted_label": None,
-                "model_scores": {}, "exploratory_emotion": None,
-                "evidence_status": "model_prediction", "model_version": "v1",
+                "reference_label": None,
+                "exploratory_emotion": None,
+                "evidence_status": "dataset_record",
             },
         }]
         merged = merge_reference_labels(records, test_path=Path(p))
@@ -432,9 +463,9 @@ class TestMergeReferenceLabels:
         records = [{
             "post_id": "test:111",
             "_lab2": {
-                "reference_label": None, "predicted_label": "sympathy_and_support",
-                "model_scores": {}, "exploratory_emotion": None,
-                "evidence_status": "model_prediction", "model_version": "v1",
+                "reference_label": None,
+                "exploratory_emotion": None,
+                "evidence_status": "dataset_record",
             },
         }]
         merged = merge_reference_labels(records, test_path=Path(p))
@@ -450,9 +481,9 @@ class TestMergeReferenceLabels:
         records = [{
             "post_id": f"test:{i}",
             "_lab2": {
-                "reference_label": None, "predicted_label": None,
-                "model_scores": {}, "exploratory_emotion": None,
-                "evidence_status": "model_prediction", "model_version": "v1",
+                "reference_label": None,
+                "exploratory_emotion": None,
+                "evidence_status": "dataset_record",
             },
         } for i in range(9)]
         merged = merge_reference_labels(records, test_path=Path(p))
@@ -481,12 +512,13 @@ class TestComputeMetrics:
         m = compute_metrics(y_true, y_pred, self.LABELS)
         assert m["macro_f1"] == 1.0
         assert m["weighted_f1"] == 1.0
+        assert m["accuracy"] == 1.0
+        assert m["coverage"] == 1.0
 
     def test_all_wrong(self):
         y_true = ["caution_and_advice"] * 3
         y_pred = ["not_humanitarian"] * 3
         m = compute_metrics(y_true, y_pred, self.LABELS)
-        # caution_and_advice recall = 0, not_humanitarian precision depends
         for pc in m["per_class"]:
             if pc["label"] == "caution_and_advice":
                 assert pc["recall"] == 0.0
@@ -496,12 +528,18 @@ class TestComputeMetrics:
         y_pred = ["caution_and_advice", None, "caution_and_advice"]
         m = compute_metrics(y_true, y_pred, self.LABELS)
         assert m.get("excluded_failures", 0) == 1
+        # Rounded to 4 decimal places in compute_metrics
+        assert m["coverage"] == 0.6667
+        assert m["accuracy"] == 0.6667
+        assert m["accuracy_on_successful_only"] == 1.0
 
     def test_all_none_predictions(self):
         y_true = ["caution_and_advice"] * 3
         y_pred = [None] * 3
         m = compute_metrics(y_true, y_pred, self.LABELS)
         assert m["macro_f1"] == 0.0
+        assert m["coverage"] == 0.0
+        assert m["accuracy"] == 0.0
         assert "No valid predictions" in m["classification_report"]
 
     def test_confusion_matrix_shape(self):
@@ -521,12 +559,12 @@ class TestComputeMetrics:
 
 class TestFindModelVersions:
     def test_finds_unique_versions(self):
-        records = [
-            {"_lab2": {"model_version": "tfidf-lr-baseline-v1"}},
-            {"_lab2": {"model_version": "deepseek-v4-flash"}},
-            {"_lab2": {"model_version": "tfidf-lr-baseline-v1"}},
+        predictions = [
+            {"model_version": "tfidf-lr-baseline-v1"},
+            {"model_version": "deepseek-v4-flash"},
+            {"model_version": "tfidf-lr-baseline-v1"},
         ]
-        versions = find_model_versions(records)
+        versions = find_model_versions(predictions=predictions)
         assert set(versions) == {"tfidf-lr-baseline-v1", "deepseek-v4-flash"}
 
     def test_handles_null_lab2(self):
@@ -683,7 +721,7 @@ class TestSampleStratified:
     def test_does_not_exceed_n_total(self, mock_records):
         for n in [3, 6, 10, 20]:
             sample = sample_stratified(mock_records, n_total=n, random_seed=42)
-            assert len(sample) <= n, f"n_total={n} but got {len(sample)}"
+            assert len(sample) == n, f"n_total={n} but got {len(sample)}"
 
     def test_minimum_one_per_class(self, mock_records):
         sample = sample_stratified(mock_records, n_total=5, random_seed=42)
@@ -699,10 +737,10 @@ class TestSampleStratified:
     def test_empty_input(self):
         assert sample_stratified([], n_total=5) == []
 
-    def test_n_total_less_than_classes_still_works(self, mock_records):
-        """When n_total < n_classes, every class gets at least 1 (n_total raised)."""
+    def test_n_total_less_than_classes_returns_exact_n(self, mock_records):
+        """When n_total < n_classes, still return exactly n_total items."""
         sample = sample_stratified(mock_records, n_total=2, random_seed=42)
-        assert len(sample) >= 3  # at least n_classes
+        assert len(sample) == 2
 
     def test_fewer_records_than_n_total(self):
         """Pool smaller than n_total returns all available."""
@@ -765,8 +803,250 @@ class TestComputeIAA:
         assert result["n_overlap"] == 2  # only 1 and 2
         assert result["raw_agreement"] == 0.5  # agree on 2, disagree on 1
 
-    def test_skips_null_emotions(self, tmp_path):
+    def test_incomplete_annotations_raise_by_default(self, tmp_path):
         self._write_annotations(tmp_path / "a.jsonl", [("1", "anger"), ("2", None)])
         self._write_annotations(tmp_path / "b.jsonl", [("1", "anger"), ("2", "sadness")])
-        result = compute_iaa(tmp_path / "a.jsonl", tmp_path / "b.jsonl")
-        assert result["raw_agreement"] == 1.0  # only tweet_id 1 compared
+        with pytest.raises(ValueError, match="Incomplete"):
+            compute_iaa(tmp_path / "a.jsonl", tmp_path / "b.jsonl")
+
+    def test_allow_incomplete_skips_null_emotions(self, tmp_path):
+        self._write_annotations(tmp_path / "a.jsonl", [("1", "anger"), ("2", None)])
+        self._write_annotations(tmp_path / "b.jsonl", [("1", "anger"), ("2", "sadness")])
+        result = compute_iaa(
+            tmp_path / "a.jsonl",
+            tmp_path / "b.jsonl",
+            require_complete=False,
+        )
+        assert result["raw_agreement"] == 1.0
+
+
+# ====================================================================
+# Round 2: separated posts / predictions contracts
+# ====================================================================
+
+from src.lab2_analysis.classify import (
+    build_unique_posts,
+    make_prediction_row,
+    migrate_legacy_labeled,
+    upsert_predictions,
+    write_jsonl_atomic,
+)
+from src.lab2_analysis.annotate_seed import (
+    merge_emotions_into_posts,
+    validate_emotion_annotations,
+    write_iaa_report,
+)
+from src.utils.cache import config_fingerprint, is_finite_unit_interval
+
+
+class TestPredictionTableContracts:
+    def test_dual_model_unique_keys(self, tmp_path):
+        posts_in = [
+            {
+                "schema_version": "1.0.0",
+                "pipeline_run_id": "t",
+                "post_id": "p1",
+                "text_clean": "Synthetic a",
+                "event_id": "kerala_floods_2018",
+                "time": None,
+                "location": None,
+                "source": "synthetic_fixture",
+                "source_ref": "synthetic_fixture:1",
+                "pii_redacted": True,
+                "_lab3": None,
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "predicted_label": "caution_and_advice",
+                    "model_scores": {"caution_and_advice": 0.9},
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                    "model_version": "baseline-v1",
+                },
+            },
+            {
+                "schema_version": "1.0.0",
+                "pipeline_run_id": "t",
+                "post_id": "p1",
+                "text_clean": "Synthetic a",
+                "event_id": "kerala_floods_2018",
+                "time": None,
+                "location": None,
+                "source": "synthetic_fixture",
+                "source_ref": "synthetic_fixture:1",
+                "pii_redacted": True,
+                "_lab3": None,
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "predicted_label": "not_humanitarian",
+                    "model_scores": {"not_humanitarian": 0.6},
+                    "exploratory_emotion": "anger",
+                    "evidence_status": "dataset_record",
+                    "model_version": "llm-v1",
+                },
+            },
+        ]
+        legacy = tmp_path / "legacy.jsonl"
+        write_jsonl_atomic(legacy, posts_in)
+        posts_out = tmp_path / "posts.jsonl"
+        preds_out = tmp_path / "preds.jsonl"
+        n_posts, n_preds = migrate_legacy_labeled(
+            legacy, posts_out=posts_out, predictions_out=preds_out
+        )
+        assert n_posts == 1
+        assert n_preds == 2
+        posts = [json.loads(l) for l in posts_out.read_text().splitlines() if l.strip()]
+        preds = [json.loads(l) for l in preds_out.read_text().splitlines() if l.strip()]
+        assert len(posts) == 1
+        assert "predicted_label" not in posts[0]["_lab2"]
+        assert posts[0]["_lab2"]["exploratory_emotion"] == "anger"
+        keys = [(p["post_id"], p["model_version"]) for p in preds]
+        assert len(keys) == len(set(keys))
+
+    def test_upsert_predictions_replaces_same_key(self, tmp_path):
+        path = tmp_path / "predictions.jsonl"
+        row1 = make_prediction_row(
+            post_id="p1",
+            model_version="m1",
+            predicted_label="caution_and_advice",
+            model_scores={"caution_and_advice": 0.9},
+            status="ok",
+            pipeline_run_id="r1",
+        )
+        row2 = make_prediction_row(
+            post_id="p1",
+            model_version="m1",
+            predicted_label="not_humanitarian",
+            model_scores={"not_humanitarian": 0.7},
+            status="ok",
+            pipeline_run_id="r1",
+        )
+        upsert_predictions(path, [row1])
+        upsert_predictions(path, [row2])
+        rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+        assert len(rows) == 1
+        assert rows[0]["predicted_label"] == "not_humanitarian"
+
+    def test_build_unique_posts_dedupes(self):
+        records = [
+            {"post_id": "a", "source": "synthetic_fixture", "text_clean": "x", "_lab3": None},
+            {"post_id": "a", "source": "synthetic_fixture", "text_clean": "x", "_lab3": None},
+            {"post_id": "b", "source": "humaid_events", "text_clean": "y", "_lab3": None},
+        ]
+        posts = build_unique_posts(records)
+        assert [p["post_id"] for p in posts] == ["a", "b"]
+        assert posts[0]["_lab2"]["evidence_status"] == "human_labeled"
+        assert posts[1]["_lab2"]["evidence_status"] == "dataset_record"
+
+
+class TestEvaluateJoinedPredictions:
+    def test_full_denominator_and_coverage(self):
+        posts = [
+            {
+                "post_id": "1",
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
+            {
+                "post_id": "2",
+                "_lab2": {
+                    "reference_label": "not_humanitarian",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
+        ]
+        predictions = [
+            {
+                "post_id": "1",
+                "model_version": "m1",
+                "predicted_label": "caution_and_advice",
+                "status": "ok",
+            },
+            {
+                "post_id": "2",
+                "model_version": "m1",
+                "predicted_label": None,
+                "status": "error",
+            },
+        ]
+        result = evaluate_model(posts, "m1", "m1", predictions=predictions)
+        assert result["total_records"] == 2
+        assert result["coverage"] == 0.5
+        assert result["accuracy"] == 0.5
+        assert result["accuracy_on_successful_only"] == 1.0
+        assert result["excluded_failures"] == 1
+
+
+class TestEmotionExactNAndMerge:
+    def test_validate_and_merge(self, tmp_path):
+        emotions = tmp_path / "emotions.jsonl"
+        emotions.write_text(
+            json.dumps(
+                {
+                    "tweet_id": "111",
+                    "exploratory_emotion": "anger",
+                    "text_clean": "Synthetic",
+                    "class_label": "caution_and_advice",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        validate_emotion_annotations(emotions)
+        labeled = tmp_path / "posts.jsonl"
+        labeled.write_text(
+            json.dumps(
+                {
+                    "post_id": "test:111",
+                    "_lab2": {
+                        "reference_label": "caution_and_advice",
+                        "exploratory_emotion": None,
+                        "evidence_status": "dataset_record",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        updated = merge_emotions_into_posts(emotions, labeled)
+        assert updated == 1
+        row = json.loads(labeled.read_text().splitlines()[0])
+        assert row["_lab2"]["exploratory_emotion"] == "anger"
+
+    def test_write_iaa_report(self, tmp_path):
+        a = tmp_path / "a.jsonl"
+        b = tmp_path / "b.jsonl"
+        a.write_text(
+            json.dumps({"tweet_id": "1", "exploratory_emotion": "anger"}) + "\n",
+            encoding="utf-8",
+        )
+        b.write_text(
+            json.dumps({"tweet_id": "1", "exploratory_emotion": "anger"}) + "\n",
+            encoding="utf-8",
+        )
+        result = compute_iaa(a, b)
+        report = write_iaa_report(result, tmp_path / "iaa.md")
+        text = report.read_text(encoding="utf-8")
+        assert "Cohen's Kappa" in text
+        assert "1.0" in text
+
+
+class TestConfidenceAndFingerprint:
+    def test_finite_unit_interval(self):
+        assert is_finite_unit_interval(0.0)
+        assert is_finite_unit_interval(1.0)
+        assert is_finite_unit_interval(0.5)
+        assert not is_finite_unit_interval(-0.1)
+        assert not is_finite_unit_interval(1.1)
+        assert not is_finite_unit_interval(float("nan"))
+        assert not is_finite_unit_interval(float("inf"))
+        assert not is_finite_unit_interval(None)
+
+    def test_config_fingerprint_stable(self):
+        fp1 = config_fingerprint({"a": 1, "b": ["x"]})
+        fp2 = config_fingerprint({"b": ["x"], "a": 1})
+        assert fp1 == fp2
+        assert fp1 != config_fingerprint({"a": 2, "b": ["x"]})
