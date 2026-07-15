@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yiwen-cai/urban-flood-social-sensing/schemas/evidence.schema.json",
+  "title": "D07 evidence record (privacy-bounded)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence_version",
+    "post_id",
+    "model_version",
+    "source",
+    "source_ref",
+    "predicted_label",
+    "reference_label",
+    "selection_reason",
+    "confidence",
+    "text_clean"
+  ],
+  "properties": {
+    "evidence_version": {"const": "1.0.0"},
+    "post_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "model_version": {"type": "string", "minLength": 1, "maxLength": 128},
+    "source": {"enum": ["humaid_events", "synthetic_fixture"]},
+    "source_ref": {"type": "string", "minLength": 1, "maxLength": 256},
+    "predicted_label": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "enum": [
+            "caution_and_advice",
+            "displaced_people_and_evacuations",
+            "infrastructure_and_utility_damage",
+            "injured_or_dead_people",
+            "not_humanitarian",
+            "other_relevant_information",
+            "requests_or_urgent_needs",
+            "rescue_volunteering_or_donation_effort",
+            "sympathy_and_support"
+          ]
+        }
+      ]
+    },
+    "reference_label": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "enum": [
+            "caution_and_advice",
+            "displaced_people_and_evacuations",
+            "infrastructure_and_utility_damage",
+            "injured_or_dead_people",
+            "not_humanitarian",
+            "other_relevant_information",
+            "requests_or_urgent_needs",
+            "rescue_volunteering_or_donation_effort",
+            "sympathy_and_support"
+          ]
+        }
+      ]
+    },
+    "selection_reason": {"type": "string", "minLength": 1, "maxLength": 512},
+    "confidence": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "number", "minimum": 0, "maximum": 1}
+      ]
+    },
+    "text_clean": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 5000}
+      ],
+      "description": "Must be null for real humaid_events rows; synthetic_fixture may include text."
+    },
+    "exploratory_emotion": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "enum": [
+            "fear_or_anxiety",
+            "anger",
+            "sadness",
+            "positive_support",
+            "neutral_or_unclear"
+          ]
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"source": {"const": "humaid_events"}},
+        "required": ["source"]
+      },
+      "then": {
+        "properties": {"text_clean": {"type": "null"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"source": {"const": "synthetic_fixture"}},
+        "required": ["source"]
+      },
+      "then": {
+        "properties": {"text_clean": {"type": "string", "minLength": 1}}
+      }
+    }
+  ]
+}

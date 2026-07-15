@@ -51,6 +51,14 @@ class PostSchemaTest(unittest.TestCase):
             self.assertNotIn("@", row["text_clean"])
             self.assertIsNone(long_number.search(row["text_clean"]))
 
+    def test_post_lab2_excludes_model_predictions(self) -> None:
+        for row in self.rows:
+            lab2 = row["_lab2"]
+            self.assertEqual(
+                set(lab2),
+                {"reference_label", "exploratory_emotion", "evidence_status"},
+            )
+
     def test_non_null_location_is_rejected(self) -> None:
         row = copy.deepcopy(self.rows[0])
         row["location"] = {"region": "invented"}
@@ -60,6 +68,12 @@ class PostSchemaTest(unittest.TestCase):
     def test_numeric_post_id_is_rejected(self) -> None:
         row = copy.deepcopy(self.rows[0])
         row["post_id"] = 123
+        with self.assertRaises(ValidationError):
+            self.validator.validate(row)
+
+    def test_embedded_prediction_fields_are_rejected(self) -> None:
+        row = copy.deepcopy(self.rows[0])
+        row["_lab2"]["predicted_label"] = "not_humanitarian"
         with self.assertRaises(ValidationError):
             self.validator.validate(row)
 

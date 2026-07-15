@@ -1,0 +1,180 @@
+{
+  "metrics_version": "2.0.0",
+  "unique_posts": 20,
+  "records_with_reference_label": 20,
+  "records_with_emotion": 20,
+  "model_versions": [
+    "fixture-baseline-v1",
+    "fixture-v1"
+  ],
+  "reference_label_distribution": {
+    "caution_and_advice": 2,
+    "displaced_people_and_evacuations": 2,
+    "infrastructure_and_utility_damage": 2,
+    "injured_or_dead_people": 2,
+    "not_humanitarian": 2,
+    "other_relevant_information": 2,
+    "requests_or_urgent_needs": 2,
+    "rescue_volunteering_or_donation_effort": 4,
+    "sympathy_and_support": 2
+  },
+  "emotion_distribution": {
+    "fear_or_anxiety": 4,
+    "neutral_or_unclear": 5,
+    "positive_support": 6,
+    "sadness": 5
+  },
+  "per_model": {
+    "fixture-v1": {
+      "n_predictions": 20,
+      "n_errors": 0,
+      "coverage": 1.0,
+      "accuracy": 1.0,
+      "macro_f1": 1.0,
+      "weighted_f1": 1.0,
+      "accuracy_on_successful_only": 1.0,
+      "predicted_label_distribution": {
+        "caution_and_advice": 2,
+        "displaced_people_and_evacuations": 2,
+        "infrastructure_and_utility_damage": 2,
+        "injured_or_dead_people": 2,
+        "not_humanitarian": 2,
+        "other_relevant_information": 2,
+        "requests_or_urgent_needs": 2,
+        "rescue_volunteering_or_donation_effort": 4,
+        "sympathy_and_support": 2
+      },
+      "per_class": {
+        "caution_and_advice": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "displaced_people_and_evacuations": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "infrastructure_and_utility_damage": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "injured_or_dead_people": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "not_humanitarian": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "other_relevant_information": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "requests_or_urgent_needs": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "rescue_volunteering_or_donation_effort": {
+          "support": 4,
+          "predicted_count": 4,
+          "correct": 4,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "sympathy_and_support": {
+          "support": 2,
+          "predicted_count": 2,
+          "correct": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "confusion_matrix": {
+        "caution_and_advice": {"caution_and_advice": 2},
+        "displaced_people_and_evacuations": {"displaced_people_and_evacuations": 2},
+        "infrastructure_and_utility_damage": {"infrastructure_and_utility_damage": 2},
+        "injured_or_dead_people": {"injured_or_dead_people": 2},
+        "not_humanitarian": {"not_humanitarian": 2},
+        "other_relevant_information": {"other_relevant_information": 2},
+        "requests_or_urgent_needs": {"requests_or_urgent_needs": 2},
+        "rescue_volunteering_or_donation_effort": {"rescue_volunteering_or_donation_effort": 4},
+        "sympathy_and_support": {"sympathy_and_support": 2}
+      }
+    },
+    "fixture-baseline-v1": {
+      "n_predictions": 3,
+      "n_errors": 1,
+      "coverage": 0.15,
+      "accuracy": 0.0,
+      "macro_f1": 0.0,
+      "weighted_f1": 0.0,
+      "accuracy_on_successful_only": 0.0,
+      "predicted_label_distribution": {
+        "other_relevant_information": 2,
+        "not_humanitarian": 1
+      },
+      "per_class": {
+        "caution_and_advice": {
+          "support": 1,
+          "predicted_count": 0,
+          "correct": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "requests_or_urgent_needs": {
+          "support": 1,
+          "predicted_count": 0,
+          "correct": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "rescue_volunteering_or_donation_effort": {
+          "support": 1,
+          "predicted_count": 0,
+          "correct": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "confusion_matrix": {
+        "caution_and_advice": {"other_relevant_information": 1},
+        "requests_or_urgent_needs": {"other_relevant_information": 1},
+        "rescue_volunteering_or_donation_effort": {"not_humanitarian": 1}
+      }
+    }
+  },
+  "generated_at": "2026-07-15T00:00:00+00:00",
+  "notes": "Synthetic fixture metrics for contract tests only."
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yiwen-cai/urban-flood-social-sensing/schemas/metrics.schema.json",
+  "title": "D07 corpus metrics (single writer schema)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "metrics_version",
+    "unique_posts",
+    "records_with_reference_label",
+    "records_with_emotion",
+    "model_versions",
+    "reference_label_distribution",
+    "emotion_distribution",
+    "per_model",
+    "generated_at"
+  ],
+  "properties": {
+    "metrics_version": {"const": "2.0.0"},
+    "unique_posts": {"type": "integer", "minimum": 0},
+    "records_with_reference_label": {"type": "integer", "minimum": 0},
+    "records_with_emotion": {"type": "integer", "minimum": 0},
+    "model_versions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "reference_label_distribution": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "emotion_distribution": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "per_model": {
+      "type": "object",
+      "minProperties": 0,
+      "additionalProperties": {"$ref": "#/$defs/model_metrics"}
+    },
+    "generated_at": {"type": "string", "minLength": 1},
+    "notes": {"type": ["string", "null"]}
+  },
+  "$defs": {
+    "model_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n_predictions",
+        "n_errors",
+        "coverage",
+        "accuracy",
+        "macro_f1",
+        "weighted_f1",
+        "predicted_label_distribution",
+        "per_class",
+        "confusion_matrix"
+      ],
+      "properties": {
+        "n_predictions": {"type": "integer", "minimum": 0},
+        "n_errors": {"type": "integer", "minimum": 0},
+        "coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "accuracy": {"type": "number", "minimum": 0, "maximum": 1},
+        "macro_f1": {"type": "number", "minimum": 0, "maximum": 1},
+        "weighted_f1": {"type": "number", "minimum": 0, "maximum": 1},
+        "accuracy_on_successful_only": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "predicted_label_distribution": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "per_class": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/class_stats"}
+        },
+        "confusion_matrix": {
+          "type": "object",
+          "description": "Nested map reference_label -> predicted_label -> count",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    },
+    "class_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "support",
+        "predicted_count",
+        "correct",
+        "precision",
+        "recall",
+        "f1"
+      ],
+      "properties": {
+        "support": {"type": "integer", "minimum": 0},
+        "predicted_count": {"type": "integer", "minimum": 0},
+        "correct": {"type": "integer", "minimum": 0},
+        "precision": {"type": "number", "minimum": 0, "maximum": 1},
+        "recall": {"type": "number", "minimum": 0, "maximum": 1},
+        "f1": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    }
+  }
+}

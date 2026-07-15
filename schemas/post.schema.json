@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/yiwen-cai/urban-flood-social-sensing/schemas/post.schema.json",
-  "title": "Kerala HumAID pipeline post",
+  "title": "Kerala HumAID pipeline post (one post per row)",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -82,27 +82,18 @@
     "lab2": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Post-level labels and emotion only. Model predictions live in predictions.jsonl.",
       "required": [
         "reference_label",
-        "predicted_label",
-        "model_scores",
         "exploratory_emotion",
-        "evidence_status",
-        "model_version"
+        "evidence_status"
       ],
       "properties": {
         "reference_label": {"$ref": "#/$defs/nullable_humanitarian_label"},
-        "predicted_label": {"$ref": "#/$defs/nullable_humanitarian_label"},
-        "model_scores": {
-          "type": "object",
-          "propertyNames": {"$ref": "#/$defs/humanitarian_label"},
-          "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
-        },
         "exploratory_emotion": {"$ref": "#/$defs/exploratory_emotion"},
         "evidence_status": {
-          "enum": ["dataset_record", "human_labeled", "model_prediction"]
-        },
-        "model_version": {"type": ["string", "null"], "maxLength": 128}
+          "enum": ["dataset_record", "human_labeled"]
+        }
       }
     },
     "lab3": {
