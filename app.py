@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 METRICS_PATH = PROJECT_ROOT / "data" / "output" / "metrics.json"
@@ -168,12 +169,12 @@ with tab2:
     if eval_text:
         for line in eval_text.splitlines():
             if "Macro-F1" in line or "Weighted-F1" in line:
-                key, _, val = line.replace("*", "").partition(":")
+                clean = line.strip().lstrip("-").strip()
+                key, _, val = clean.replace("*", "").partition(":")
                 key = key.strip()
-                try:
-                    model_info[key] = val.strip()
-                except Exception:
-                    pass
+                val = val.strip()
+                if key and val:
+                    model_info[key] = val
 
     col_m1, col_m2 = st.columns(2)
     with col_m1:
@@ -214,12 +215,31 @@ with tab2:
         })
     st.dataframe(pd.DataFrame(table_data), width="stretch")
 
-    st.markdown("#### 混淆矩阵（Lab 2 产出）")
-    cm_path = FIGURES_DIR / "confusion_matrix_tfidf-lr-baseline-v1.png"
-    if cm_path.is_file():
-        st.image(str(cm_path), caption="Confusion Matrix (TF-IDF+LR baseline)")
-    else:
-        st.info("混淆矩阵未生成，请先运行 Lab 2 evaluate")
+    st.markdown("#### 混淆矩阵")
+    ref_labels = LABEL_ORDER
+    pred_labels = LABEL_ORDER
+    n = len(ref_labels)
+    ref_idx = {l: i for i, l in enumerate(ref_labels)}
+    matrix = [[0] * n for _ in range(n)]
+    for rec in evidence:
+        ref = rec.get("reference_label", "")
+        pred = rec.get("predicted_label", "")
+        if ref in ref_idx and pred in ref_idx:
+            matrix[ref_idx[ref]][ref_idx[pred]] += 1
+
+    heatmap = go.Heatmap(
+        z=matrix,
+        x=[LABEL_NAMES_CN[l] for l in pred_labels],
+        y=[LABEL_NAMES_CN[l] for l in ref_labels],
+        colorscale="Blues", text=matrix, texttemplate="%{text}",
+        textfont={"color": "white"},
+        hovertemplate="参考: %{y}<br>预测: %{x}<br>数量: %{z}<extra></extra>",
+    )
+    fig_cm = go.Figure(heatmap)
+    fig_cm.update_layout(height=520, xaxis_title="预测", yaxis_title="参考",
+                         xaxis_tickangle=-45)
+    fig_cm.update_traces(showscale=False)
+    st.plotly_chart(fig_cm, width="stretch")
 
     st.divider()
     st.markdown("#### 关键类别召回率")
@@ -286,6 +306,18 @@ with tab4:
     total = metrics["total_records"]
     emo_dist = metrics.get("emotion_distribution", {})
     total_emo = sum(emo_dist.values())
+    # Fallback: if main data has no emotions, try emotion_dev.jsonl
+    if total_emo == 0:
+        emo_dev_path = PROJECT_ROOT / "data" / "seed" / "emotion_dev.jsonl"
+        if emo_dev_path.is_file():
+            dev_lines = emo_dev_path.read_text(encoding="utf-8").strip().splitlines()
+            dev_records = [json.loads(line) for line in dev_lines if line.strip()]
+            dev_emos = [r.get("exploratory_emotion") for r in dev_records if r.get("exploratory_emotion")]
+            if dev_emos:
+                from collections import Counter
+                emo_dist = dict(Counter(dev_emos))
+                total_emo = sum(emo_dist.values())
+                st.info(f"当前样本规模：{total} 条记录；情绪数据来自 `emotion_dev.jsonl`（{total_emo} 条 IAA 标注样本）。")
     st.info(f"当前样本规模：{total} 条记录；其中含情绪标注：{total_emo} 条。情绪标签为课程成员人工标注的探索性补充。")
 
     col1, col2 = st.columns(2)
