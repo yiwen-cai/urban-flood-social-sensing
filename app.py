@@ -105,11 +105,26 @@ with tab1:
     manifest = load_manifest()
     dq_text = load_data_quality()
 
+    dq = metrics.get("data_quality", {})
+    total = metrics["total_records"]
+
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("冻结记录数", metrics["total_records"])
+    col1.metric("冻结记录数", total)
     col2.metric("事件", "kerala_floods_2018")
     col3.metric("数据来源", "HumAID test split")
-    col4.metric("字段缺失", "time/location=null")
+    ref_missing = dq.get("missing_reference_label", 0)
+    col4.metric("有参考标签", f"{total - ref_missing}/{total}")
+
+    col_a, col_b, col_c = st.columns(3)
+    missing_text = dq.get("missing_text_clean", 0)
+    missing_pred = dq.get("missing_predicted_label", 0)
+    dupes = dq.get("duplicate_ids", 0)
+    col_a.metric("记录缺失率", f"{missing_text}/{total}" if missing_text else "0%",
+                 help=f"text_clean 为空: {missing_text} 条")
+    col_b.metric("模型预测缺失", f"{missing_pred}/{total}" if missing_pred else "0%",
+                 help=f"predicted_label 为空: {missing_pred} 条")
+    col_c.metric("重复 post_id", f"{dupes} 条" if dupes else "0 条",
+                 help=f"唯一 post_id: {dq.get('unique_post_ids', total)}")
 
     st.markdown("#### 数据字段与处理说明")
     st.markdown("""
@@ -205,6 +220,23 @@ with tab2:
         st.image(str(cm_path), caption="Confusion Matrix (TF-IDF+LR baseline)")
     else:
         st.info("混淆矩阵未生成，请先运行 Lab 2 evaluate")
+
+    st.divider()
+    st.markdown("#### 关键类别召回率")
+    critical = [
+        ("requests_or_urgent_needs", "紧急需求"),
+        ("displaced_people_and_evacuations", "流离失所与疏散"),
+    ]
+    for label_key, label_name in critical:
+        stats = per_class.get(label_key, {})
+        recall = stats.get("recall", 0)
+        support = stats.get("reference_count", 0)
+        st.metric(
+            f"🆘 {label_name}",
+            f"召回率 {recall:.3f}（{support} 条）",
+            delta="⚠️ 低于 0.5" if recall < 0.5 else "✅ 高于 0.5",
+            delta_color="off" if recall < 0.5 else "normal",
+        )
 
     st.divider()
     st.caption("评估报告与 `docs/project/evaluation.md` 和 `data/output/metrics.json` 一致。")

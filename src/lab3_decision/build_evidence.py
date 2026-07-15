@@ -40,10 +40,30 @@ def compute_metrics(posts: list[dict]) -> dict:
     evidence_status_counts: dict[str, int] = Counter()
     correct = 0
 
+    # Data quality counters
+    missing_text = 0
+    missing_ref = 0
+    missing_pred = 0
+    post_ids: set[str] = set()
+    duplicates = 0
+
     for p in posts:
         lab2 = p.get("_lab2")
         if not lab2:
             continue
+
+        # Data quality
+        if not p.get("text_clean"):
+            missing_text += 1
+        if not lab2.get("reference_label"):
+            missing_ref += 1
+        if not lab2.get("predicted_label"):
+            missing_pred += 1
+        pid = p.get("post_id", "")
+        if pid in post_ids:
+            duplicates += 1
+        post_ids.add(pid)
+
         ref = lab2.get("reference_label")
         pred = lab2.get("predicted_label")
         emotion = lab2.get("exploratory_emotion")
@@ -85,6 +105,15 @@ def compute_metrics(posts: list[dict]) -> dict:
         "per_class_stats": per_class_stats,
         "emotion_distribution": emotion_counts,
         "evidence_status_distribution": dict(evidence_status_counts),
+        "data_quality": {
+            "unique_post_ids": len(post_ids),
+            "duplicate_ids": duplicates,
+            "missing_text_clean": missing_text,
+            "missing_reference_label": missing_ref,
+            "missing_predicted_label": missing_pred,
+            "time_null": total,   # all records — by design per DATA_GATE.md
+            "location_null": total,
+        },
     }
 
 
