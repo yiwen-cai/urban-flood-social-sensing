@@ -72,7 +72,9 @@ class TestD07UnifiedWriter:
             if row["source"] == "synthetic_fixture":
                 assert isinstance(row["text_clean"], str)
 
-    def test_real_mode_evidence_omits_text(self, fixture_posts, fixture_predictions):
+    def test_real_mode_evidence_omits_text_when_disabled(
+        self, fixture_posts, fixture_predictions
+    ):
         posts = []
         for row in fixture_posts:
             cloned = dict(row)
@@ -86,6 +88,25 @@ class TestD07UnifiedWriter:
         )
         for row in evidence:
             assert row["text_clean"] is None
+            _validator("evidence.schema.json").validate(row)
+
+    def test_real_mode_evidence_includes_redacted_text_when_enabled(
+        self, fixture_posts, fixture_predictions
+    ):
+        posts = []
+        for row in fixture_posts:
+            cloned = dict(row)
+            cloned["source"] = "humaid_events"
+            posts.append(cloned)
+        evidence = extract_evidence(
+            posts,
+            fixture_predictions,
+            model_version="fixture-v1",
+            include_text=True,
+        )
+        assert evidence
+        for row in evidence:
+            assert isinstance(row["text_clean"], str)
             _validator("evidence.schema.json").validate(row)
 
     def test_partial_model_failure_still_builds(self, fixture_posts):

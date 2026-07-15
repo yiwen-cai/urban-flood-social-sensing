@@ -254,9 +254,7 @@ def extract_evidence(
                 continue
             label = pred["predicted_label"]
             source = post.get("source", "humaid_events")
-            text = post.get("text_clean") if include_text and source == "synthetic_fixture" else None
-            if source == "humaid_events":
-                text = None
+            text = post.get("text_clean") if include_text else None
             confidence = pred.get("confidence")
             if confidence is None and label in (pred.get("model_scores") or {}):
                 confidence = pred["model_scores"][label]

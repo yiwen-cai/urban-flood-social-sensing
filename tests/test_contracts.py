@@ -69,13 +69,14 @@ class ContractFixtureTest(unittest.TestCase):
     def test_evidence_privacy_boundary(self) -> None:
         for row in self.evidence:
             if row["source"] == "humaid_events":
-                self.assertIsNone(row["text_clean"])
+                if row["text_clean"] is not None:
+                    self.assertIsInstance(row["text_clean"], str)
             else:
                 self.assertIsInstance(row["text_clean"], str)
                 self.assertTrue(row["text_clean"].startswith("Synthetic"))
 
-    def test_real_mode_evidence_with_body_is_rejected(self) -> None:
-        bad = {
+    def test_real_mode_evidence_allows_redacted_text(self) -> None:
+        allowed = {
             "evidence_version": "1.0.0",
             "post_id": "x",
             "model_version": "m",
@@ -83,13 +84,12 @@ class ContractFixtureTest(unittest.TestCase):
             "source_ref": "humaid_events:test:1",
             "predicted_label": "not_humanitarian",
             "reference_label": "not_humanitarian",
-            "selection_reason": "should fail",
+            "selection_reason": "local dashboard redacted body",
             "confidence": 0.5,
-            "text_clean": "real tweet body must not appear",
+            "text_clean": "Residents should avoid flooded roads per [USER] guidance.",
             "exploratory_emotion": None,
         }
-        with self.assertRaises(ValidationError):
-            self.evidence_v.validate(bad)
+        self.evidence_v.validate(allowed)
 
     def test_duplicate_prediction_key_is_detectable(self) -> None:
         keys = [(row["post_id"], row["model_version"]) for row in self.preds]
@@ -123,6 +123,7 @@ class TrackedTreePrivacyTest(unittest.TestCase):
         allowed = {
             "data/analyzed/.gitkeep",
             "data/output/.gitkeep",
+            "data/output/metrics.public.json",
             "data/seed/.gitkeep",
         }
         self.assertEqual(set(listed), allowed)
@@ -144,6 +145,13 @@ class TrackedTreePrivacyTest(unittest.TestCase):
                 self.fail(f"tracked data path still contains real source marker: {path}")
             if path.startswith("data/") and path.endswith(".jsonl"):
                 self.fail(f"tracked data jsonl is forbidden at tip: {path}")
+
+    def test_public_metrics_are_schema_valid_and_body_free(self) -> None:
+        path = ROOT / "data" / "output" / "metrics.public.json"
+        self.assertTrue(path.is_file())
+        text = path.read_text(encoding="utf-8")
+        self.assertNotIn("text_clean", text)
+        _validator("metrics.schema.json").validate(json.loads(text))
 
 
 class DualWriterContractTest(unittest.TestCase):

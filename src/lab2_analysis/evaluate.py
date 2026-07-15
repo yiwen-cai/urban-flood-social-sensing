@@ -343,53 +343,47 @@ def generate_evaluation_report(
     if len(all_results) >= 2:
         lines.append("## Model Comparison")
         lines.append("")
-        lines.append("| Metric | Baseline (TF-IDF+LR) | LLM (DeepSeek) |")
-        lines.append("|--------|----------------------|----------------|")
+        model_names = [
+            str(result.get("model_version") or result.get("model") or "unknown")
+            for result in all_results
+        ]
+        lines.append(f"| Metric | {' | '.join(model_names)} |")
+        lines.append(f"|--------|{'|'.join('---' for _ in model_names)}|")
 
-        def _by_model(keyword: str) -> dict:
-            for v in all_results:
-                if keyword in v.get("model_version", ""):
-                    return v
-            return {}
-
-        baseline = _by_model("tfidf")
-        llm = _by_model("deepseek")
-
-        def _get(key: str, results: dict) -> str:
-            return str(results.get(key, "N/A"))
-
-        lines.append(f"| Coverage | {_get('coverage', baseline)} | {_get('coverage', llm)} |")
-        lines.append(f"| Accuracy (full) | {_get('accuracy', baseline)} | {_get('accuracy', llm)} |")
-        lines.append(
-            f"| Accuracy (successful only) | {_get('accuracy_on_successful_only', baseline)} "
-            f"| {_get('accuracy_on_successful_only', llm)} |"
-        )
-        lines.append(f"| Macro-F1 | {_get('macro_f1', baseline)} | {_get('macro_f1', llm)} |")
-        lines.append(
-            f"| Weighted-F1 | {_get('weighted_f1', baseline)} | {_get('weighted_f1', llm)} |"
-        )
+        for label, key in (
+            ("Coverage", "coverage"),
+            ("Accuracy (full)", "accuracy"),
+            ("Accuracy (successful only)", "accuracy_on_successful_only"),
+            ("Macro-F1", "macro_f1"),
+            ("Weighted-F1", "weighted_f1"),
+        ):
+            values = [str(result.get(key, "N/A")) for result in all_results]
+            lines.append(f"| {label} | {' | '.join(values)} |")
         lines.append("")
         lines.append("### Critical Class Recall")
         lines.append("")
-        lines.append("| Critical Class | Baseline Recall | LLM Recall |")
-        lines.append("|----------------|-----------------|------------|")
+        lines.append(f"| Critical Class | {' | '.join(model_names)} |")
+        lines.append(f"|----------------|{'|'.join('---' for _ in model_names)}|")
         for cc in ("requests_or_urgent_needs", "displaced_people_and_evacuations"):
-            b_recall = next(
-                (str(pc["recall"]) for pc in baseline.get("per_class", []) if pc["label"] == cc),
-                "N/A",
-            )
-            l_recall = next(
-                (str(pc["recall"]) for pc in llm.get("per_class", []) if pc["label"] == cc),
-                "N/A",
-            )
-            lines.append(f"| {cc} | {b_recall} | {l_recall} |")
+            recalls = [
+                next(
+                    (
+                        str(pc["recall"])
+                        for pc in result.get("per_class", [])
+                        if pc["label"] == cc
+                    ),
+                    "N/A",
+                )
+                for result in all_results
+            ]
+            lines.append(f"| {cc} | {' | '.join(recalls)} |")
         lines.append("")
 
     lines.extend(
         [
             "## Limitations & Usage Notes",
             "",
-            "- Metrics are computed on the frozen HumAID Kerala test split (1,582 unique posts).",
+            f"- Metrics are computed on the {unique_posts} unique posts supplied to this evaluation run.",
             "- Primary accuracy uses the full reference denominator; failures reduce coverage and accuracy.",
             "- Labels are highly imbalanced; rely on Macro-F1, not Accuracy alone.",
             "- `model_scores` / confidence are NOT calibrated probabilities.",

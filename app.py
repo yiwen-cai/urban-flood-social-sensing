@@ -1,4 +1,4 @@
-"""Streamlit offline dashboard — reads D07 outputs, no live API calls."""
+"""Streamlit offline dashboard — reads local D07 outputs with full information."""
 
 from __future__ import annotations
 
@@ -40,14 +40,36 @@ EMOTION_NAMES_CN = {
 LABEL_ORDER = list(LABEL_NAMES_CN)
 EMOTION_ORDER = list(EMOTION_NAMES_CN)
 
+
+def _preferred_model_index(model_versions: list[str]) -> int:
+    for keyword in ("deepseek", "fixture-v1", "tfidf"):
+        for idx, version in enumerate(model_versions):
+            if keyword in version:
+                return idx
+    return 0
+
+
+def _dataset_profile(metrics: dict) -> tuple[str, str]:
+    unique_posts = metrics.get("unique_posts", 0)
+    if unique_posts >= 1000:
+        return (
+            "真实 Kerala test split",
+            f"当前展示 {unique_posts} 条真实帖子的完整本地看板：聚合指标、脱敏正文 evidence、简报与图表。",
+        )
+    return (
+        "Synthetic fixture",
+        f"当前展示 {unique_posts} 条合成演示数据。本地存在 legacy 文件时，运行 `bash run_pipeline.sh` 可生成真实完整看板。",
+    )
+
+
 st.set_page_config(page_title="Kerala Flood Social Sensing", layout="wide")
 st.title("Kerala 2018 洪水社交媒体分析看板")
 st.caption("课程技术演示 — 不构成实时监测或权威灾情结论")
 
 
 @st.cache_data
-def load_metrics():
-    return json.loads(METRICS_PATH.read_text(encoding="utf-8"))
+def load_metrics(path: str):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 @st.cache_data
@@ -84,16 +106,26 @@ def load_iaa():
 
 
 if not METRICS_PATH.is_file():
-    st.error("metrics.json not found. Run `python -m src.lab3_decision.build_evidence` first.")
+    st.error(
+        "未找到 `data/output/metrics.json`。请先运行 `bash run_pipeline.sh` "
+        "（本地有 legacy 时生成真实完整看板）或 `bash run_pipeline.sh --fixture --offline`。"
+    )
     st.stop()
 
-metrics = load_metrics()
+metrics = load_metrics(str(METRICS_PATH))
 evidence = load_evidence()
+briefing = load_briefing()
+profile_name, profile_detail = _dataset_profile(metrics)
+if metrics.get("unique_posts", 0) >= 1000:
+    st.success(f"**{profile_name}** — {profile_detail}")
+else:
+    st.warning(f"**{profile_name}** — {profile_detail}")
+
 model_versions = metrics.get("model_versions") or []
 selected_model = st.sidebar.selectbox(
     "模型版本",
     options=model_versions or ["（无模型）"],
-    index=0,
+    index=_preferred_model_index(model_versions) if model_versions else 0,
 )
 if selected_model == "（无模型）":
     selected_model = None
@@ -216,33 +248,41 @@ with tab2:
 
 with tab3:
     st.header("代表性脱敏记录")
-    st.caption("真实来源模式不展示正文；合成 fixture 可展示脱敏摘要。紧急需求记录已全量纳入。")
-    label_filter = st.selectbox(
-        "按类别筛选",
-        ["全部"] + [LABEL_NAMES_CN[l] for l in LABEL_ORDER],
-    )
-    for rec in filtered_evidence:
-        label = LABEL_NAMES_CN.get(rec.get("predicted_label"), rec.get("predicted_label"))
-        if label_filter != "全部" and label != label_filter:
-            continue
-        title_body = rec.get("text_clean") or rec.get("post_id", "")
-        with st.expander(f"{label} · {str(title_body)[:80]}"):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"**post_id** `{rec.get('post_id')}`")
-                st.markdown(f"**来源** `{rec.get('source_ref')}`")
-                st.markdown(f"**选择理由** {rec.get('selection_reason')}")
-                if rec.get("text_clean"):
-                    st.markdown("**原文摘要**")
-                    st.text(rec["text_clean"])
-                else:
-                    st.info("真实数据模式：不展示正文")
-            with col2:
-                st.metric("置信度", f"{rec.get('confidence') or 0:.3f}")
-                st.caption(f"模型: {rec.get('model_version')}")
-                emo = rec.get("exploratory_emotion")
-                if emo:
-                    st.caption(f"情绪: {EMOTION_NAMES_CN.get(emo, emo)}")
+    st.caption("展示本地 evidence 记录；真实来源为脱敏正文，合成来源为演示文本。紧急需求记录已全量纳入。")
+    if not filtered_evidence:
+        st.info("当前模型没有可展示的 evidence。请先运行 `bash run_pipeline.sh` 生成 D07 产物。")
+    else:
+        label_filter = st.selectbox(
+            "按类别筛选",
+            ["全部"] + [LABEL_NAMES_CN[l] for l in LABEL_ORDER],
+        )
+        for rec in filtered_evidence:
+            label = LABEL_NAMES_CN.get(rec.get("predicted_label"), rec.get("predicted_label"))
+            if label_filter != "全部" and label != label_filter:
+                continue
+            title_body = rec.get("text_clean") or rec.get("post_id", "")
+            with st.expander(f"{label} · {str(title_body)[:80]}"):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**post_id** `{rec.get('post_id')}`")
+                    st.markdown(f"**来源** `{rec.get('source_ref')}`")
+                    st.markdown(f"**选择理由** {rec.get('selection_reason')}")
+                    if rec.get("text_clean"):
+                        body_label = (
+                            "脱敏正文"
+                            if rec.get("source") == "humaid_events"
+                            else "合成正文"
+                        )
+                        st.markdown(f"**{body_label}**")
+                        st.text(rec["text_clean"])
+                    else:
+                        st.info("该记录未包含正文。")
+                with col2:
+                    st.metric("置信度", f"{rec.get('confidence') or 0:.3f}")
+                    st.caption(f"模型: {rec.get('model_version')}")
+                    emo = rec.get("exploratory_emotion")
+                    if emo:
+                        st.caption(f"情绪: {EMOTION_NAMES_CN.get(emo, emo)}")
 
 with tab4:
     st.header("探索性情绪分析")
@@ -254,7 +294,7 @@ with tab4:
         "情绪标签为课程成员人工标注的探索性补充。"
     )
     if total_emo == 0:
-        st.info("暂无情绪标注数据。")
+        st.info("当前数据集尚未合并探索性情绪标注。")
     else:
         emo_df = pd.DataFrame(
             {
@@ -278,9 +318,8 @@ with tab4:
             f"（{emo_dist[dominant]} / {total_emo}，{emo_dist[dominant] / total_emo * 100:.1f}%）"
         )
 
-    iaa_text = load_iaa()
     st.markdown("#### 标注一致率（IAA）")
-    if iaa_text:
+    if iaa_text := load_iaa():
         with st.expander("完整 IAA 报告", expanded=True):
             st.markdown(iaa_text)
     else:
@@ -288,12 +327,11 @@ with tab4:
 
 with tab5:
     st.header("课程分析简报")
-    briefing = load_briefing()
     if briefing:
         st.markdown(briefing)
     else:
         st.warning(
             "简报文件未生成。运行 "
-            "`python -m src.lab3_decision.build_evidence && python -m src.lab3_decision.generate_briefing`"
+            "`bash run_pipeline.sh` 或 `bash run_pipeline.sh --fixture --offline`。"
         )
     st.caption("本简报用于课程技术演示；不发布预警、救援建议或权威灾情结论。")

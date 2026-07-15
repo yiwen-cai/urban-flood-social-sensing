@@ -500,6 +500,7 @@ from src.lab2_analysis.evaluate import (
     compute_metrics,
     evaluate_model,
     find_model_versions,
+    generate_evaluation_report,
 )
 
 
@@ -577,6 +578,27 @@ class TestFindModelVersions:
 
     def test_empty_returns_empty(self):
         assert find_model_versions([]) == []
+
+
+class TestGenerateEvaluationReport:
+    def test_comparison_uses_actual_model_versions(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "src.lab2_analysis.evaluate.plot_confusion_matrix",
+            lambda *args, **kwargs: None,
+        )
+        report = generate_evaluation_report(
+            Path("tests/fixtures/sample_posts.jsonl"),
+            tmp_path / "evaluation.md",
+            tmp_path / "figures",
+            predictions_path=Path("tests/fixtures/sample_predictions.jsonl"),
+        )
+
+        assert "| Metric | fixture-baseline-v1 | fixture-v1 |" in report
+        assert "| Coverage | 0.15 | 1.0 |" in report
+        assert "| Critical Class | fixture-baseline-v1 | fixture-v1 |" in report
+        assert "Baseline (TF-IDF+LR)" not in report
+        assert "LLM (DeepSeek)" not in report
+        assert "20 unique posts supplied to this evaluation run" in report
 
 
 # ====================================================================

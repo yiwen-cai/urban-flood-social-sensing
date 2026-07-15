@@ -2,7 +2,7 @@
 
 面向社会计算课程实践的 Kerala 2018 洪水社交媒体人道信息分析项目。以 HumAID 单事件冻结语料为输入，完成数据治理、baseline 与 LLM 的 9 类人道信息分类对比、探索性情绪分析、D07 结构化聚合，以及可追溯的中文课程简报和离线看板。
 
-> 当前状态：课程发布级 tip 已清理真实推文正文；`posts_labeled` 一帖一行，预测独立写入 `predictions.jsonl`；`bash run_pipeline.sh --fixture --offline` 可在无 raw 数据、无 API key、无网络时跑通。
+> 当前状态：本地默认 `bash run_pipeline.sh` 会生成完整看板产物（`metrics.json` / `evidence.jsonl` / `briefing.md`）；无 legacy 时回退到 `bash run_pipeline.sh --fixture --offline`。
 
 ## 项目边界
 
@@ -22,19 +22,24 @@
 | Lab 2 分类与评估 | Lab 1 清洗结果 | `posts_labeled.jsonl` + `predictions.jsonl`、评估报告 |
 | Lab 3 决策支持 | Lab 2 结果 | D07 `metrics.json` / `evidence.jsonl`、简报、离线看板 |
 
-## 快速开始（clean clone / 离线）
+## 快速开始
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.lock   # 或 requirements.txt
-cp .env.example .env               # 真实 DeepSeek 运行才需要；fixture 离线不需要
+cp .env.example .env               # 真实 DeepSeek 运行才需要；legacy 迁移不需要
 
+# 默认：本地有 legacy 时生成 1,582 条真实完整看板；否则回退 synthetic fixture
+bash run_pipeline.sh
+
+# clean clone / CI：仅 synthetic fixture
 bash run_pipeline.sh --fixture --offline
+
 streamlit run app.py               # 读取 data/output/metrics.json 等本地产物
 ```
 
-公开演示聚合指标（无正文）见 [`data/output/metrics.public.json`](data/output/metrics.public.json)。合成记录级样例见 [`tests/fixtures/`](tests/fixtures/)。
+看板默认读取本地完整 D07 产物：[`data/output/metrics.json`](data/output/metrics.json)、[`data/output/evidence.jsonl`](data/output/evidence.jsonl)、[`data/output/briefing.md`](data/output/briefing.md)。公开仓库 tip 仍只跟踪无正文的 [`data/output/metrics.public.json`](data/output/metrics.public.json)。
 
 ## 复用已有 DeepSeek 结果（可选，本地）
 
