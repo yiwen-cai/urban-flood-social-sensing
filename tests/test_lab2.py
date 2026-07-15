@@ -607,43 +607,135 @@ def _make_record(post_id, ref_label, pred_label, model_ver, emotion=None):
 
 
 class TestBuildMetrics:
-    def test_total_records(self):
-        records = [
-            _make_record("1", "caution_and_advice", "caution_and_advice", "tfidf-v1"),
-            _make_record("2", "not_humanitarian", "not_humanitarian", "tfidf-v1"),
-            _make_record("3", "sympathy_and_support", "sympathy_and_support", "tfidf-v1"),
+    def test_unique_posts(self):
+        posts = [
+            {
+                "post_id": "1",
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
+            {
+                "post_id": "2",
+                "_lab2": {
+                    "reference_label": "not_humanitarian",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
+            {
+                "post_id": "3",
+                "_lab2": {
+                    "reference_label": "sympathy_and_support",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
         ]
-        m = build_metrics(records)
-        assert m["total_records"] == 3
+        predictions = [
+            {
+                "post_id": p["post_id"],
+                "model_version": "tfidf-v1",
+                "predicted_label": p["_lab2"]["reference_label"],
+                "status": "ok",
+            }
+            for p in posts
+        ]
+        m = build_metrics(posts, predictions)
+        assert m["unique_posts"] == 3
         assert m["records_with_reference_label"] == 3
-        assert m["records_with_prediction"] == 3
         assert m["records_with_emotion"] == 0
+        assert m["metrics_version"] == "2.0.0"
 
     def test_model_versions(self):
-        records = [
-            _make_record("1", "caution_and_advice", "caution_and_advice", "tfidf-v1"),
-            _make_record("2", "not_humanitarian", "not_humanitarian", "deepseek-v4-flash"),
+        posts = [
+            {
+                "post_id": "1",
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            }
         ]
-        m = build_metrics(records)
+        predictions = [
+            {
+                "post_id": "1",
+                "model_version": "tfidf-v1",
+                "predicted_label": "caution_and_advice",
+                "status": "ok",
+            },
+            {
+                "post_id": "1",
+                "model_version": "deepseek-v4-flash",
+                "predicted_label": "not_humanitarian",
+                "status": "ok",
+            },
+        ]
+        m = build_metrics(posts, predictions)
         assert set(m["model_versions"]) == {"tfidf-v1", "deepseek-v4-flash"}
 
     def test_reference_label_distribution(self):
-        records = [
-            _make_record("1", "caution_and_advice", "caution_and_advice", "v1"),
-            _make_record("2", "caution_and_advice", "caution_and_advice", "v1"),
-            _make_record("3", "not_humanitarian", "not_humanitarian", "v1"),
+        posts = [
+            {
+                "post_id": "1",
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
+            {
+                "post_id": "2",
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
+            {
+                "post_id": "3",
+                "_lab2": {
+                    "reference_label": "not_humanitarian",
+                    "exploratory_emotion": None,
+                    "evidence_status": "dataset_record",
+                },
+            },
         ]
-        dist = build_metrics(records)["reference_label_distribution"]
+        dist = build_metrics(posts, [])["reference_label_distribution"]
         assert dist["caution_and_advice"] == 2
         assert dist["not_humanitarian"] == 1
 
     def test_emotion_distribution(self):
-        records = [
-            _make_record("1", "A", "A", "v1", emotion="fear_or_anxiety"),
-            _make_record("2", "B", "B", "v1", emotion="fear_or_anxiety"),
-            _make_record("3", "C", "C", "v1", emotion="sadness"),
+        posts = [
+            {
+                "post_id": "1",
+                "_lab2": {
+                    "reference_label": "caution_and_advice",
+                    "exploratory_emotion": "fear_or_anxiety",
+                    "evidence_status": "dataset_record",
+                },
+            },
+            {
+                "post_id": "2",
+                "_lab2": {
+                    "reference_label": "not_humanitarian",
+                    "exploratory_emotion": "fear_or_anxiety",
+                    "evidence_status": "dataset_record",
+                },
+            },
+            {
+                "post_id": "3",
+                "_lab2": {
+                    "reference_label": "sympathy_and_support",
+                    "exploratory_emotion": "sadness",
+                    "evidence_status": "dataset_record",
+                },
+            },
         ]
-        dist = build_metrics(records)["emotion_distribution"]
+        dist = build_metrics(posts, [])["emotion_distribution"]
         assert dist["fear_or_anxiety"] == 2
         assert dist["sadness"] == 1
 
@@ -657,30 +749,42 @@ class TestBuildEvidenceInventory:
             _make_record(f"b{i}", "not_humanitarian", "not_humanitarian", "v1")
             for i in range(5)
         ]
+        for r in records:
+            r["source"] = "synthetic_fixture"
         evidence = build_evidence_inventory(records, max_per_category=3)
-        labels = Counter(e["reference_label"] for e in evidence)
+        labels = Counter(
+            e["predicted_label"]
+            for e in evidence
+            if str(e.get("selection_reason", "")).startswith("top-")
+        )
         assert labels["caution_and_advice"] == 3
         assert labels["not_humanitarian"] == 3
 
-    def test_prefers_correct_predictions(self):
+    def test_includes_urgent_records(self):
         records = [
-            _make_record("a", "caution_and_advice", "caution_and_advice", "v1"),  # correct
-            _make_record("b", "caution_and_advice", "not_humanitarian", "v1"),     # wrong
+            _make_record("a", "requests_or_urgent_needs", "requests_or_urgent_needs", "v1"),
+            _make_record("b", "caution_and_advice", "caution_and_advice", "v1"),
         ]
+        for r in records:
+            r["source"] = "synthetic_fixture"
         evidence = build_evidence_inventory(records, max_per_category=1)
-        # Should prefer the correct prediction
-        assert evidence[0]["is_correct_prediction"] is True
+        reasons = {e["selection_reason"] for e in evidence}
+        assert any(r.startswith("urgent") for r in reasons)
 
-    def test_skips_no_reference(self):
+    def test_skips_no_prediction(self):
         records = [
             {
                 "post_id": "1",
                 "source_ref": "x",
                 "text_clean": "t",
+                "source": "synthetic_fixture",
                 "_lab2": {
-                    "reference_label": None, "predicted_label": "X",
-                    "model_scores": {}, "exploratory_emotion": None,
-                    "evidence_status": "model_prediction", "model_version": "v1",
+                    "reference_label": None,
+                    "predicted_label": None,
+                    "model_scores": {},
+                    "exploratory_emotion": None,
+                    "evidence_status": "model_prediction",
+                    "model_version": "v1",
                 },
             },
         ]

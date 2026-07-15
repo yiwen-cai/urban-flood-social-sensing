@@ -1,17 +1,30 @@
-"""Compute structured metrics and extract evidence records from labeled posts.
+"""D07 single writer: corpus metrics + privacy-bounded evidence.
 
-Reads posts_labeled.jsonl → metrics.json + evidence.jsonl.
-All numbers are computed by code, never handed to an LLM to calculate.
+Reads posts_labeled.jsonl + predictions.jsonl and writes:
+- data/output/metrics.json  (schemas/metrics.schema.json v2.0.0)
+- data/output/evidence.jsonl (schemas/evidence.schema.json v1.0.0)
+
+Lab 2 ``aggregate.py`` is a compatibility wrapper around this module.
+Real humaid_events evidence never copies tweet bodies.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
+import tempfile
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_POSTS = PROJECT_ROOT / "data" / "analyzed" / "posts_labeled.jsonl"
+DEFAULT_PREDICTIONS = PROJECT_ROOT / "data" / "analyzed" / "predictions.jsonl"
+DEFAULT_METRICS = PROJECT_ROOT / "data" / "output" / "metrics.json"
+DEFAULT_EVIDENCE = PROJECT_ROOT / "data" / "output" / "evidence.jsonl"
+
 LABELS = [
     "caution_and_advice",
     "displaced_people_and_evacuations",
@@ -23,181 +36,339 @@ LABELS = [
     "rescue_volunteering_or_donation_effort",
     "sympathy_and_support",
 ]
-EMOTIONS = ["fear_or_anxiety", "anger", "sadness", "positive_support", "neutral_or_unclear"]
+EMOTIONS = [
+    "fear_or_anxiety",
+    "anger",
+    "sadness",
+    "positive_support",
+    "neutral_or_unclear",
+]
 
 
-def load_posts(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
-def compute_metrics(posts: list[dict]) -> dict:
-    total = len(posts)
-    cat_counts: dict[str, int] = dict.fromkeys(LABELS, 0)
-    pred_counts: dict[str, int] = dict.fromkeys(LABELS, 0)
-    correct_per_class: dict[str, int] = dict.fromkeys(LABELS, 0)
-    emotion_counts: dict[str, int] = dict.fromkeys(EMOTIONS, 0)
-    evidence_status_counts: dict[str, int] = Counter()
-    correct = 0
+def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        delete=False,
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    ) as tmp:
+        json.dump(payload, tmp, ensure_ascii=False, indent=2)
+        tmp.write("\n")
+        tmp_path = Path(tmp.name)
+    tmp_path.replace(path)
 
-    # Data quality counters
-    missing_text = 0
-    missing_ref = 0
-    missing_pred = 0
-    post_ids: set[str] = set()
-    id_model_pairs: set[tuple[str, str]] = set()
-    duplicates = 0
 
-    for p in posts:
-        lab2 = p.get("_lab2")
-        if not lab2:
+def write_jsonl_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        delete=False,
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    ) as tmp:
+        for row in rows:
+            tmp.write(json.dumps(row, ensure_ascii=False) + "\n")
+        tmp_path = Path(tmp.name)
+    tmp_path.replace(path)
+
+
+def _posts_by_id(posts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for post in posts:
+        pid = post["post_id"]
+        if pid in out:
+            raise ValueError(f"duplicate post_id in posts file: {pid}")
+        out[pid] = post
+    return out
+
+
+def _per_model_metrics(
+    posts_by_id: dict[str, dict[str, Any]],
+    predictions: list[dict[str, Any]],
+    model_version: str,
+) -> dict[str, Any]:
+    from src.lab2_analysis.evaluate import compute_metrics
+
+    model_preds = [p for p in predictions if p.get("model_version") == model_version]
+    pred_by_id = {p["post_id"]: p for p in model_preds}
+
+    y_true: list[str] = []
+    y_pred: list[str | None] = []
+    predicted_dist: Counter[str] = Counter()
+    n_errors = 0
+
+    for post_id, post in sorted(posts_by_id.items()):
+        ref = (post.get("_lab2") or {}).get("reference_label")
+        if ref is None:
             continue
+        row = pred_by_id.get(post_id)
+        if row is None:
+            y_true.append(ref)
+            y_pred.append(None)
+            n_errors += 1
+            continue
+        if row.get("status") == "error" or row.get("predicted_label") is None:
+            y_true.append(ref)
+            y_pred.append(None)
+            n_errors += 1
+            continue
+        label = row["predicted_label"]
+        y_true.append(ref)
+        y_pred.append(label)
+        predicted_dist[label] += 1
 
-        # Data quality
-        if not p.get("text_clean"):
-            missing_text += 1
-        if not lab2.get("reference_label"):
-            missing_ref += 1
-        if not lab2.get("predicted_label"):
-            missing_pred += 1
-        pid = p.get("post_id", "")
-        model = lab2.get("model_version", "")
-        pair = (pid, model)
-        if pair in id_model_pairs:
-            duplicates += 1
-        id_model_pairs.add(pair)
-        post_ids.add(pid)
+    metrics = compute_metrics(y_true, y_pred, LABELS, full_denominator=True)
+    cm = metrics.get("confusion_matrix")
+    cm_dict: dict[str, dict[str, int]] = {}
+    if cm is not None:
+        for i, ref_label in enumerate(LABELS):
+            row_counts: dict[str, int] = {}
+            for j, pred_label in enumerate(LABELS):
+                count = int(cm[i, j])
+                if count:
+                    row_counts[pred_label] = count
+            if row_counts:
+                cm_dict[ref_label] = row_counts
 
-        ref = lab2.get("reference_label")
-        pred = lab2.get("predicted_label")
-        emotion = lab2.get("exploratory_emotion")
-        status = lab2.get("evidence_status", "model_prediction")
-
-        if ref in cat_counts:
-            cat_counts[ref] += 1
-        if pred in pred_counts:
-            pred_counts[pred] += 1
-        if ref and pred and ref == pred:
-            correct += 1
-            correct_per_class[ref] += 1
-        if emotion in emotion_counts:
-            emotion_counts[emotion] += 1
-        evidence_status_counts[status] += 1
-
-    accuracy = correct / total if total else 0
-    per_class_stats = {}
-    for label in LABELS:
-        support = cat_counts[label]
-        prec = correct_per_class[label] / pred_counts[label] if pred_counts[label] else 0
-        rec = correct_per_class[label] / support if support else 0
-        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0
-        per_class_stats[label] = {
-            "reference_count": support,
-            "predicted_count": pred_counts[label],
-            "correct": correct_per_class[label],
-            "precision": round(prec, 4),
-            "recall": round(rec, 4),
-            "f1": round(f1, 4),
+    per_class: dict[str, dict[str, Any]] = {}
+    for pc in metrics.get("per_class") or []:
+        label = pc["label"]
+        correct = 0
+        if cm is not None:
+            idx = LABELS.index(label)
+            correct = int(cm[idx, idx])
+        per_class[label] = {
+            "support": pc["support"],
+            "predicted_count": predicted_dist.get(label, 0),
+            "correct": correct,
+            "precision": pc["precision"],
+            "recall": pc["recall"],
+            "f1": pc["f1"],
         }
 
     return {
-        "total_records": total,
-        "correct_predictions": correct,
-        "accuracy": round(accuracy, 4),
-        "category_distribution": cat_counts,
-        "predicted_distribution": pred_counts,
-        "per_class_stats": per_class_stats,
-        "emotion_distribution": emotion_counts,
-        "evidence_status_distribution": dict(evidence_status_counts),
-        "data_quality": {
-            "unique_post_ids": len(post_ids),
-            "unique_model_pairs": len(id_model_pairs),
-            "duplicate_ids": duplicates,
-            "missing_text_clean": missing_text,
-            "missing_reference_label": missing_ref,
-            "missing_predicted_label": missing_pred,
-            "note": (
-                f"{len(post_ids)} unique post_ids among {total} records "
-                f"({len(id_model_pairs)} unique (post_id, model) pairs, "
-                f"{duplicates} duplicate pairs)"
-            ) if len(post_ids) < total else "",
-        },
+        "n_predictions": len(model_preds),
+        "n_errors": n_errors,
+        "coverage": metrics["coverage"],
+        "accuracy": metrics["accuracy"],
+        "macro_f1": metrics["macro_f1"],
+        "weighted_f1": metrics["weighted_f1"],
+        "accuracy_on_successful_only": metrics.get("accuracy_on_successful_only"),
+        "predicted_label_distribution": dict(predicted_dist),
+        "per_class": per_class,
+        "confusion_matrix": cm_dict,
     }
 
 
-def extract_evidence(posts: list[dict], top_n: int = 3) -> list[dict]:
-    by_class: dict[str, list[dict]] = defaultdict(list)
-    all_urgent: list[dict] = []
+def compute_metrics(
+    posts: list[dict[str, Any]],
+    predictions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build D07 metrics.json payload (metrics_version 2.0.0)."""
+    if predictions is None:
+        predictions = []
 
-    for p in posts:
-        lab2 = p.get("_lab2")
-        if not lab2:
-            continue
-        pred = lab2.get("predicted_label")
-        if not pred:
-            continue
+    posts_by_id = _posts_by_id(posts)
+    unique_posts = len(posts_by_id)
+    ref_dist: Counter[str] = Counter()
+    emotion_dist: Counter[str] = Counter()
+    with_ref = 0
+    with_emotion = 0
 
-        evidence = {
-            "source_ref": p["source_ref"],
-            "text_clean": p["text_clean"],
-            "predicted_label": pred,
-            "reference_label": lab2.get("reference_label"),
-            "exploratory_emotion": lab2.get("exploratory_emotion"),
-            "evidence_status": lab2.get("evidence_status", "model_prediction"),
-            "confidence": lab2.get("model_scores", {}).get(pred, 0),
-        }
-        by_class[pred].append(evidence)
-        if pred == "requests_or_urgent_needs":
-            all_urgent.append(evidence)
+    for post in posts_by_id.values():
+        lab2 = post.get("_lab2") or {}
+        ref = lab2.get("reference_label")
+        emotion = lab2.get("exploratory_emotion")
+        if ref is not None:
+            with_ref += 1
+            ref_dist[ref] += 1
+        if emotion is not None:
+            with_emotion += 1
+            emotion_dist[emotion] += 1
 
-    records: list[dict] = []
-    for label in LABELS:
-        ranked = sorted(by_class.get(label, []), key=lambda x: x["confidence"], reverse=True)
-        for e in ranked[:top_n]:
-            e["selection_reason"] = f"top-{top_n} high-confidence {label}"
-            records.append(e)
-    for e in all_urgent:
-        e["selection_reason"] = "urgent needs: all records included"
+    model_versions = sorted(
+        {p.get("model_version") for p in predictions if p.get("model_version")}
+    )
+    per_model = {
+        version: _per_model_metrics(posts_by_id, predictions, version)
+        for version in model_versions
+    }
+
+    return {
+        "metrics_version": "2.0.0",
+        "unique_posts": unique_posts,
+        "records_with_reference_label": with_ref,
+        "records_with_emotion": with_emotion,
+        "model_versions": model_versions,
+        "reference_label_distribution": dict(ref_dist),
+        "emotion_distribution": dict(emotion_dist),
+        "per_model": per_model,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "notes": None,
+    }
+
+
+def extract_evidence(
+    posts: list[dict[str, Any]],
+    predictions: list[dict[str, Any]],
+    *,
+    top_n: int = 3,
+    model_version: str | None = None,
+    include_text: bool | None = None,
+) -> list[dict[str, Any]]:
+    """Select representative evidence rows with privacy bounds."""
+    posts_by_id = _posts_by_id(posts)
+    if include_text is None:
+        sources = {p.get("source") for p in posts}
+        include_text = sources == {"synthetic_fixture"}
+
+    selected_models = (
+        [model_version]
+        if model_version
+        else sorted({p.get("model_version") for p in predictions if p.get("model_version")})
+    )
+
+    records: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for version in selected_models:
+        by_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        urgent: list[dict[str, Any]] = []
+        for pred in predictions:
+            if pred.get("model_version") != version:
+                continue
+            if pred.get("status") != "ok" or not pred.get("predicted_label"):
+                continue
+            post = posts_by_id.get(pred["post_id"])
+            if post is None:
+                continue
+            label = pred["predicted_label"]
+            source = post.get("source", "humaid_events")
+            text = post.get("text_clean") if include_text and source == "synthetic_fixture" else None
+            if source == "humaid_events":
+                text = None
+            confidence = pred.get("confidence")
+            if confidence is None and label in (pred.get("model_scores") or {}):
+                confidence = pred["model_scores"][label]
+            evidence = {
+                "evidence_version": "1.0.0",
+                "post_id": post["post_id"],
+                "model_version": version,
+                "source": source,
+                "source_ref": post.get("source_ref", ""),
+                "predicted_label": label,
+                "reference_label": (post.get("_lab2") or {}).get("reference_label"),
+                "selection_reason": "",
+                "confidence": confidence,
+                "text_clean": text,
+                "exploratory_emotion": (post.get("_lab2") or {}).get("exploratory_emotion"),
+            }
+            by_class[label].append(evidence)
+            if label == "requests_or_urgent_needs":
+                urgent.append(evidence)
+
+        for label in LABELS:
+            ranked = sorted(
+                by_class.get(label, []),
+                key=lambda x: (x["confidence"] is not None, x["confidence"] or 0.0),
+                reverse=True,
+            )
+            for row in ranked[:top_n]:
+                item = dict(row)
+                item["selection_reason"] = f"top-{top_n} high-confidence {label}"
+                key = (item["post_id"], item["model_version"], item["selection_reason"])
+                if key not in seen:
+                    seen.add(key)
+                    records.append(item)
+
+        for row in urgent:
+            item = dict(row)
+            item["selection_reason"] = "urgent needs: all records included"
+            key = (item["post_id"], item["model_version"], item["selection_reason"])
+            if key not in seen:
+                seen.add(key)
+                records.append(item)
+
     return records
 
 
-def main() -> None:
+def build_d07(
+    posts_path: Path,
+    predictions_path: Path,
+    *,
+    metrics_output: Path = DEFAULT_METRICS,
+    evidence_output: Path = DEFAULT_EVIDENCE,
+    top_n: int = 3,
+    model_version: str | None = None,
+    include_text: bool | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not posts_path.is_file():
+        raise FileNotFoundError(f"posts not found: {posts_path}")
+    posts = load_jsonl(posts_path)
+    predictions = load_jsonl(predictions_path) if predictions_path.is_file() else []
+    metrics = compute_metrics(posts, predictions)
+    evidence = extract_evidence(
+        posts,
+        predictions,
+        top_n=top_n,
+        model_version=model_version,
+        include_text=include_text,
+    )
+    write_json_atomic(metrics_output, metrics)
+    write_jsonl_atomic(evidence_output, evidence)
+    return metrics, evidence
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--posts", type=Path, default=DEFAULT_POSTS)
+    parser.add_argument("--predictions", type=Path, default=DEFAULT_PREDICTIONS)
+    parser.add_argument("--metrics-output", type=Path, default=DEFAULT_METRICS)
+    parser.add_argument("--evidence-output", type=Path, default=DEFAULT_EVIDENCE)
+    parser.add_argument("--top-n", type=int, default=3)
+    parser.add_argument("--model-version", type=str, default=None)
     parser.add_argument(
-        "--input", type=Path,
-        default=PROJECT_ROOT / "data" / "analyzed" / "posts_labeled.jsonl",
-        help="path to posts_labeled.jsonl",
+        "--include-text",
+        action="store_true",
+        help="Force include text_clean (synthetic fixtures only still enforced for humaid)",
     )
-    parser.add_argument(
-        "--metrics-output", type=Path,
-        default=PROJECT_ROOT / "data" / "output" / "metrics.json",
-    )
-    parser.add_argument(
-        "--evidence-output", type=Path,
-        default=PROJECT_ROOT / "data" / "output" / "evidence.jsonl",
-    )
+    # Compatibility aliases used by older aggregate CLI / docs
+    parser.add_argument("--input", type=Path, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    if not args.input.is_file():
-        import sys
-        print(f"not found: {args.input} — run against fixture first", file=sys.stderr)
-        raise SystemExit(1)
+    posts_path = args.input or args.posts
+    try:
+        metrics, evidence = build_d07(
+            posts_path,
+            args.predictions,
+            metrics_output=args.metrics_output,
+            evidence_output=args.evidence_output,
+            top_n=args.top_n,
+            model_version=args.model_version,
+            include_text=True if args.include_text else None,
+        )
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
-    posts = load_posts(args.input)
-    metrics = compute_metrics(posts)
-    evidence = extract_evidence(posts)
-
-    args.metrics_output.parent.mkdir(parents=True, exist_ok=True)
-    args.metrics_output.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    args.evidence_output.parent.mkdir(parents=True, exist_ok=True)
-    with args.evidence_output.open("w", encoding="utf-8") as f:
-        for e in evidence:
-            f.write(json.dumps(e, ensure_ascii=False) + "\n")
-
-    print(f"metrics: {args.metrics_output} ({metrics['total_records']} records, accuracy={metrics['accuracy']})")
+    print(
+        f"metrics: {args.metrics_output} "
+        f"({metrics['unique_posts']} unique posts, "
+        f"{len(metrics['model_versions'])} models)"
+    )
     print(f"evidence: {args.evidence_output} ({len(evidence)} records)")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
