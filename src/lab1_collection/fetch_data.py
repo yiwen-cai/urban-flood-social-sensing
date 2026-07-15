@@ -74,14 +74,21 @@ def validate_file(entry: dict[str, Any], allowed_labels: set[str]) -> set[str]:
     return set(ids)
 
 
-def download_file(entry: dict[str, Any], force: bool) -> None:
+def resolve_url(url: str, mirror: str | None) -> str:
+    if mirror is None:
+        return url
+    return url.replace("huggingface.co", mirror)
+
+
+def download_file(entry: dict[str, Any], force: bool, mirror: str | None = None) -> None:
     destination = PROJECT_ROOT / entry["path"]
     if destination.exists() and not force:
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".part")
     request = urllib.request.Request(
-        entry["url"], headers={"User-Agent": "urban-flood-social-sensing/1.0"}
+        resolve_url(entry["url"], mirror),
+        headers={"User-Agent": "urban-flood-social-sensing/1.0"},
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response, temporary.open("wb") as out:
@@ -114,13 +121,14 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--verify-only", action="store_true")
     parser.add_argument("--force", action="store_true", help="redownload existing files")
+    parser.add_argument("--mirror", type=str, default=None, help="replace huggingface.co with a mirror host (e.g. hf-mirror.com)")
     args = parser.parse_args()
 
     try:
         manifest = load_manifest(args.manifest)
         if not args.verify_only:
             for entry in manifest["files"]:
-                download_file(entry, force=args.force)
+                download_file(entry, force=args.force, mirror=args.mirror)
         verify_manifest(manifest)
     except (OSError, VerificationError) as exc:
         print(f"data gate failed: {exc}", file=sys.stderr)

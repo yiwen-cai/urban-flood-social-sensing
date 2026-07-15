@@ -1,9 +1,11 @@
 # Schema validation & testing
 jsonschema>=4.20,<5
 pytest>=8,<10
-
-# Data processing
+jinja2>=3,<4
+streamlit>=1,<2
+matplotlib>=3.7,<4
 pandas>=2,<3
+plotly>=5,<7
 numpy>=1.24,<3
 
 # Machine learning (baseline classifier)
@@ -14,6 +16,3 @@ openai>=1.0,<2
 
 # Configuration
 pyyaml>=6,<8
-
-# Visualization
-matplotlib>=3.7,<5
