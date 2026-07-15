@@ -43,7 +43,11 @@ A regex-based audit over all 7,984 local texts found records containing the foll
 | Email-like strings | 12 | Replace with `[EMAIL]` |
 | Explicit `http(s)` or `www` URL markers | 0 | Continue URL redaction in the generic cleaner |
 
-These counts are pattern matches, not confirmed identities. They establish that redaction is mandatory. The public repository, Slides, dashboard, logs, and demo video must not contain searchable original tweet text, handles, contact details, names, or precise addresses.
+These counts are pattern matches, not confirmed identities. They establish that redaction is mandatory. Apply three surfaces:
+
+1. **Public tip and redistributable artifacts** (GitHub, CI, shareable decks, uploaded recordings): must not contain searchable original tweet text, bare handles, contact details, names, or precise addresses. Prefer aggregate metrics and synthetic fixtures.
+2. **Classroom projection Slides and live demos** (not uploaded for public redistribution): may show text that has passed `src/utils/redact.py` (`pii_redacted: true`, no bare `@handle` tokens). Evidence `text_clean` and tracked redacted `posts_labeled.jsonl` rows are acceptable sources. Still cite HumAID and state non-authoritative course-demo boundaries.
+3. **Raw HumAID downloads and unredacted tweet bodies**: remain local-only under ignored `data/raw/` paths and must never enter the public tip, Slides, dashboard exports, logs, or demo video intended for redistribution.
 
 ## 5. License and redistribution boundary
 
@@ -58,7 +62,7 @@ Consequences for this repository:
 3. `tests/fixtures/sample_posts.jsonl` still contains synthetic text for contract testing.
 4. `data/output/metrics.public.json` remains the body-free aggregate snapshot; generated `metrics.json` / `evidence.jsonl` / `briefing.md` stay gitignored local products.
 5. Sending redacted text to DeepSeek remains subject to the team's course/research approval and the provider's data policy.
-6. Derived publications and Slides must cite the HumAID paper and dataset source. Prefer aggregate tables or synthetic examples in shareable decks; live classroom demos may show redacted tip texts.
+6. Derived publications and Slides must cite the HumAID paper and dataset source. **Shareable** decks (course platform upload, public link, GitHub attachment) should use aggregate tables or synthetic examples only. **Classroom-only** Slides and live demos may embed redacted real `text_clean` excerpts from tracked posts or local `evidence.jsonl`, provided they pass the redaction rules above and are not republished outside the course session.
 
 ## 6. Data distribution for three-person collaboration
 
