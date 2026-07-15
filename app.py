@@ -176,6 +176,25 @@ with tab2:
                 if key and val:
                     model_info[key] = val
 
+    # Detect if LLM data exists
+    has_llm = False
+    if eval_text and "deepseek" in eval_text.lower():
+        # Parse LLM F1 values from evaluation.md
+        in_llm_section = False
+        for line in eval_text.splitlines():
+            if "deepseek" in line.lower():
+                in_llm_section = True
+                continue
+            if in_llm_section and line.startswith("##"):
+                break
+            if in_llm_section and ("Macro-F1" in line or "Weighted-F1" in line):
+                clean = line.strip().lstrip("-").strip()
+                key, _, val = clean.replace("*", "").partition(":")
+                key = key.strip()
+                val = val.strip()
+                if key and val:
+                    model_info["LLM_" + key] = val
+
     col_m1, col_m2 = st.columns(2)
     with col_m1:
         st.markdown("**TF-IDF + LR (baseline)**")
@@ -186,7 +205,13 @@ with tab2:
             st.info("待运行 Lab 2 evaluate")
     with col_m2:
         st.markdown("**LLM Few-shot (DeepSeek)**")
-        st.info("待 LLM 分类完成（需配置 .env 中的 DEEPSEEK_API_KEY）")
+        if model_info.get("LLM_Macro-F1"):
+            st.metric("Macro-F1", model_info["LLM_Macro-F1"])
+            st.metric("Weighted-F1", model_info.get("LLM_Weighted-F1", "N/A"))
+        elif has_llm:
+            st.info("LLM 数据已存在，请重新运行 `python -m src.lab2_analysis.evaluate` 更新评估报告")
+        else:
+            st.info("待 LLM 分类完成（需配置 .env 中的 DEEPSEEK_API_KEY）")
 
     st.markdown("#### 九类人道信息分布")
     cat_dist = metrics["category_distribution"]
@@ -383,12 +408,13 @@ with tab4:
         kappa_values = []
         for line in iaa_text.splitlines():
             for pair in ["A ↔ B", "B ↔ C", "A ↔ C"]:
-                if pair in line and "κ" in line:
-                    try:
-                        parts = line.split("|")
-                        kappa_values.append((pair, parts[-2].strip() if len(parts) > 2 else ""))
-                    except Exception:
-                        pass
+                if pair in line and "↔" in line:
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) >= 4:
+                        val = parts[3]
+                        if val.replace(".", "").replace("0", "").replace("1", "").replace("2", "").replace("3", "").replace("4", "").replace("5", "").replace("6", "").replace("7", "").replace("8", "").replace("9", "") == "":
+                            kappa_values.append((pair, val))
+                    break
         if kappa_values:
             for pair, val in kappa_values:
                 try:
