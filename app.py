@@ -379,11 +379,19 @@ with tab4:
     with col2:
         st.markdown("#### 情绪 × 类别交叉")
         cross: dict[str, dict[str, int]] = {}
-        for rec in evidence:
-            cat = rec.get("predicted_label", "")
-            emo = rec.get("exploratory_emotion") or "无"
-            cross.setdefault(cat, {}).setdefault(emo, 0)
-            cross[cat][emo] += 1
+        if total_emo > 0 and dev_records:
+            for r in dev_records:
+                cat = r.get("class_label", "")
+                emo = r.get("exploratory_emotion") or "无"
+                if cat and emo != "无":
+                    cross.setdefault(cat, {}).setdefault(emo, 0)
+                    cross[cat][emo] += 1
+        else:
+            for rec in evidence:
+                cat = rec.get("predicted_label", "")
+                emo = rec.get("exploratory_emotion") or "无"
+                cross.setdefault(cat, {}).setdefault(emo, 0)
+                cross[cat][emo] += 1
 
         cross_table = []
         for cat in LABEL_ORDER:
